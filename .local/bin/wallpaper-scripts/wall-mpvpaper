@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Author: Om Singh
+# wall-mpvpaper: Apply a video wallpaper using mpvpaper
+# Usage:
+#   wall-mpvpaper /path/to/video.mp4
+
+set -euo pipefail
+
+VIDEO="${1:-}"
+
+if [[ -z "$VIDEO" || ! -f "$VIDEO" ]]; then
+    echo "Usage: wall-mpvpaper /path/to/video.mp4"
+    exit 1
+fi
+
+VIDEO="$(realpath "$VIDEO")"
+
+# We don't apply pywal for videos right now. The UI theme remains whatever it was.
+exec mpvpaper -vs -o "no-audio loop" '*' "$VIDEO"

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=System Power Menu [Super+Backspace]
+Comment=Shutdown, reboot, lock, or log out
+Exec=/home/faulter/.local/bin/sysact
+Icon=system-shutdown
+Terminal=false
+Categories=System;
+Keywords=power;shutdown;reboot;lock;logout;exit;

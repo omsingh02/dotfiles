@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Timebox / Pomodoro Timer [Super+Shift+F2]
+Comment=Productivity timer and focus sessions
+Exec=/home/faulter/.local/bin/timebox-ctl
+Icon=accessories-clock
+Terminal=false
+Categories=Utility;
+Keywords=timer;pomodoro;timebox;focus;clock;f2;

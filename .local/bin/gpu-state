@@ -1,0 +1,6 @@
+#!/bin/sh
+# Author: Om Singh
+# Print dGPU power state (runtime status + PCI power state)
+
+cat /sys/bus/pci/devices/0000:01:00.0/power/runtime_status
+cat /sys/bus/pci/devices/0000:01:00.0/power_state

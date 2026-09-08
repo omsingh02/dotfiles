@@ -1,0 +1,85 @@
+#!/bin/bash
+# Author: Om Singh
+# Battery Event Handler script
+# Triggered by udev on power_supply changes
+
+# --- DEBOUNCING ---
+# Open a file descriptor (9) and try to get an exclusive, non-blocking lock.
+# If another instance of this script is already running, flock fails and we exit.
+exec 9>"/tmp/battery_notify.lock"
+if ! /usr/bin/flock -n 9; then
+    exit 0
+fi
+
+# --- SETTLE TIME ---
+# Give the kernel and ACPI 1.5 seconds to finish their event storm
+# and update the actual status files.
+/usr/bin/sleep 1.5
+
+# Use absolute paths for udev compatibility
+NOTIFY_SEND="/usr/bin/notify-send"
+
+USER_NAME="faulter"
+USER_ID=$(/usr/bin/id -u "$USER_NAME" || echo 1000)
+
+# Exit silently if the user session DBus isn't active yet (e.g., during boot)
+if [ ! -S "/run/user/${USER_ID}/bus" ]; then
+    exit 0
+fi
+
+BAT=$(cat /sys/class/power_supply/BAT*/capacity 2>/dev/null | head -1)
+STATUS=$(cat /sys/class/power_supply/BAT*/status 2>/dev/null | head -1)
+
+# Ensure we actually got a battery reading, and ignore "Unknown" transition states
+if [ -z "$BAT" ] || [ "$STATUS" = "Unknown" ]; then
+    exit 0
+fi
+
+# A file to keep track of the last notification state
+STATE_FILE="/run/user/${USER_ID}/battery_notify_state"
+LAST_STATE=$(cat "$STATE_FILE" 2>/dev/null || echo "")
+
+send_notification() {
+    local urgency=$1
+    local title=$2
+    local message=$3
+    local icon=$4
+
+    sudo -u "$USER_NAME" env DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${USER_ID}/bus" \
+        "$NOTIFY_SEND" -u "$urgency" -i "$icon" "$title" "$message"
+}
+
+update_state() {
+    local new_state=$1
+    if [ "$(/usr/bin/id -u)" -eq 0 ]; then
+        echo "$new_state" > "$STATE_FILE"
+        chown "$USER_NAME:$USER_NAME" "$STATE_FILE"
+    else
+        echo "$new_state" > "$STATE_FILE"
+    fi
+}
+
+# Handle charging/discharging state changes
+if [ "$STATUS" = "Charging" ] || [ "$STATUS" = "Full" ]; then
+    if [ "$LAST_STATE" != "CHARGING" ]; then
+        send_notification "normal" "Battery Charging" "Plugged in. Capacity: ${BAT}%" "battery-charging"
+        update_state "CHARGING"
+    fi
+elif [ "$STATUS" = "Discharging" ]; then
+    if [ "$BAT" -le 10 ]; then
+        if [ "$LAST_STATE" != "CRITICAL" ]; then
+            send_notification "critical" "Battery Critical" "Please plug in charger IMMEDIATELY. Capacity: ${BAT}%" "battery-empty"
+            update_state "CRITICAL"
+        fi
+    elif [ "$BAT" -le 20 ]; then
+        if [ "$LAST_STATE" != "LOW" ] && [ "$LAST_STATE" != "CRITICAL" ]; then
+            send_notification "critical" "Battery Low" "Capacity is low: ${BAT}%" "battery-caution"
+            update_state "LOW"
+        fi
+    else
+        if [ "$LAST_STATE" = "CHARGING" ]; then
+            send_notification "normal" "Battery Discharging" "Unplugged. Capacity: ${BAT}%" "battery"
+            update_state "DISCHARGING"
+        fi
+    fi
+fi

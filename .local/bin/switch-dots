@@ -1,0 +1,388 @@
+#!/usr/bin/env bash
+# Author: Om Singh
+# switch-dots: Isolated toggle between personal and caelestia desktop configs
+# Usage: switch-dots [personal|caelestia|status]
+#   No args = toggle between the two
+#
+# ISOLATION GUARANTEE:
+#   - Personal configs are NEVER modified by caelestia
+#   - Every file caelestia's theme.py writes is backed up before switching
+#     and restored byte-for-byte when switching back
+#   - dconf/gsettings values are saved and restored per-profile
+#   - Services (waybar/mako/awww vs quickshell) are cleanly swapped
+#   - A lockfile prevents concurrent runs
+#   - Pre-flight checks catch problems BEFORE anything is modified
+#   - NEVER touches: shell (bash/zsh/fish), starship, uwsm, foot
+
+set -euo pipefail
+
+# ── Paths ──
+HYPR_DIR="$HOME/.config/hypr"
+PERSONAL_DIR="$HOME/.config/hypr-personal"
+CAELESTIA_DIR="$HOME/dox/repos/hypr/caelestia/hypr"
+BACKUP_DIR="$HOME/.local/state/switch-dots"
+LOCKFILE="$BACKUP_DIR/.lock"
+CONFIG="$HOME/.config"
+
+# Every file caelestia's theme.py OVERWRITES (relative to ~/.config/).
+# Verified by auditing /usr/lib/python3.14/site-packages/caelestia/utils/theme.py.
+# btop/themes/caelestia.theme and qt*ct/colors/caelestia.colors use different
+# filenames from personal (wallust.theme, wallust.colors) so they're safe.
+PROTECTED_FILES=(
+    "gtk-3.0/gtk.css"
+    "gtk-3.0/thunar.css"
+    "gtk-4.0/gtk.css"
+    "gtk-4.0/thunar.css"
+    "qt5ct/qt5ct.conf"
+    "qt6ct/qt6ct.conf"
+    "fuzzel/fuzzel.ini"
+    "htop/htoprc"
+    "nvtop/nvtop.colors"
+)
+
+# dconf keys caelestia modifies (gsettings in execs.conf + theme.py dconf writes)
+DCONF_KEYS=(
+    "/org/gnome/desktop/interface/gtk-theme"
+    "/org/gnome/desktop/interface/color-scheme"
+    "/org/gnome/desktop/interface/icon-theme"
+    "/org/gnome/desktop/interface/cursor-theme"
+    "/org/gnome/desktop/interface/cursor-size"
+)
+
+# ── Helpers ──
+log() { echo ":: $*"; }
+err() { echo "!! ERROR: $*" >&2; }
+
+die() {
+    err "$*"
+    cleanup_lock
+    exit 1
+}
+
+acquire_lock() {
+    mkdir -p "$BACKUP_DIR"
+    
+    # Check for stale lockfile
+    if [[ -f "$LOCKFILE" ]]; then
+        local pid
+        pid=$(cat "$LOCKFILE" 2>/dev/null || echo "")
+        if [[ -n "$pid" ]]; then
+            # Verify process is still alive and is actually switch-dots (recycled PID check)
+            if ! kill -0 "$pid" 2>/dev/null || ! grep -q "switch-dots" "/proc/$pid/cmdline" 2>/dev/null; then
+                log "Removing stale lockfile from dead/recycled process (PID $pid)"
+                rm -f "$LOCKFILE"
+            fi
+        else
+            # Empty lockfile
+            rm -f "$LOCKFILE"
+        fi
+    fi
+
+    if ! (set -C; echo $$ > "$LOCKFILE") 2>/dev/null; then
+        local pid
+        pid=$(cat "$LOCKFILE" 2>/dev/null || echo "unknown")
+        die "Another switch-dots is running (PID $pid). If stale, remove $LOCKFILE"
+    fi
+    trap cleanup_lock EXIT
+}
+
+cleanup_lock() {
+    rm -f "$LOCKFILE"
+}
+
+current_profile() {
+    if [[ -L "$HYPR_DIR" ]]; then
+        local target
+        target=$(readlink -f "$HYPR_DIR")
+        if [[ "$target" == "$(readlink -f "$CAELESTIA_DIR")" ]]; then
+            echo "caelestia"
+            return
+        fi
+    fi
+    echo "personal"
+}
+
+# ── Snapshot / Restore ──
+# Saves all protected files + dconf values for $1 (personal|caelestia)
+snapshot_configs() {
+    local profile="$1"
+    local dest="$BACKUP_DIR/$profile"
+    mkdir -p "$dest"
+
+    log "Snapshotting $profile configs..."
+
+    # Files
+    for f in "${PROTECTED_FILES[@]}"; do
+        if [[ -L "$CONFIG/$f" || -f "$CONFIG/$f" ]]; then
+            mkdir -p "$dest/files/$(dirname "$f")"
+            # Back up the symlink exactly as-is (-P)
+            cp -P "$CONFIG/$f" "$dest/files/$f"
+            # Permanently sever the link in ~/.config before Caelestia executes
+            if [[ -L "$CONFIG/$f" ]]; then
+                rm -f "$CONFIG/$f"
+            fi
+        fi
+    done
+
+    # dconf values
+    local dconf_file="$dest/dconf.dump"
+    : > "$dconf_file"
+    for key in "${DCONF_KEYS[@]}"; do
+        local val
+        val=$(dconf read "$key" 2>/dev/null || echo "")
+        printf '%s\t%s\n' "$key" "$val" >> "$dconf_file"
+    done
+}
+
+# Restores all protected files + dconf values for $1
+restore_configs() {
+    local profile="$1"
+    local src="$BACKUP_DIR/$profile"
+
+    if [[ ! -d "$src/files" ]]; then
+        log "No $profile snapshot found — skipping restore"
+        return 0
+    fi
+
+    log "Restoring $profile configs..."
+
+    # Files
+    for f in "${PROTECTED_FILES[@]}"; do
+        if [[ -L "$src/files/$f" || -f "$src/files/$f" ]]; then
+            mkdir -p "$CONFIG/$(dirname "$f")"
+            # Overwrite the Caelestia file with the backed-up symlink (-aT)
+            cp -aT "$src/files/$f" "$CONFIG/$f"
+        fi
+    done
+
+    # dconf values
+    local dconf_file="$src/dconf.dump"
+    if [[ -f "$dconf_file" ]]; then
+        while IFS=$'\t' read -r key val; do
+            [[ -z "$key" || "$key" == "#"* ]] && continue
+            if [[ -n "$val" ]]; then
+                dconf write "$key" "$val" 2>/dev/null || true
+            fi
+        done < "$dconf_file"
+    fi
+}
+
+# ── Pre-flight checks ──
+preflight_to_caelestia() {
+    local ok=true
+
+    if [[ ! -d "$CAELESTIA_DIR" ]]; then
+        err "Caelestia hypr dir not found: $CAELESTIA_DIR"
+        ok=false
+    fi
+
+    if ! command -v caelestia &>/dev/null; then
+        err "caelestia CLI not found in PATH"
+        ok=false
+    fi
+
+    if ! command -v hyprctl &>/dev/null; then
+        err "hyprctl not found — is Hyprland running?"
+        ok=false
+    fi
+
+    # If hypr is a real dir and personal backup already exists, something is wrong
+    if [[ -d "$HYPR_DIR" && ! -L "$HYPR_DIR" && -d "$PERSONAL_DIR" ]]; then
+        err "Both $HYPR_DIR (real dir) and $PERSONAL_DIR exist — ambiguous state"
+        ok=false
+    fi
+
+    $ok || die "Pre-flight checks failed. No changes were made."
+}
+
+preflight_to_personal() {
+    local ok=true
+
+    if [[ ! -d "$PERSONAL_DIR" ]]; then
+        err "Personal hypr backup not found: $PERSONAL_DIR"
+        err "Cannot switch back — your personal configs are missing!"
+        ok=false
+    fi
+
+    if ! command -v hyprctl &>/dev/null; then
+        err "hyprctl not found — is Hyprland running?"
+        ok=false
+    fi
+
+    $ok || die "Pre-flight checks failed. No changes were made."
+}
+
+# ── Switch Functions ──
+switch_to_caelestia() {
+    local current
+    current=$(current_profile)
+    if [[ "$current" == "caelestia" ]]; then
+        log "Already on caelestia"
+        return 0
+    fi
+
+    preflight_to_caelestia
+    acquire_lock
+
+    log "Switching to caelestia..."
+
+    # 1. BACK UP personal configs BEFORE anything touches them
+    snapshot_configs personal
+
+    # 2. First-time setup: move real hypr dir to personal backup
+    if [[ -d "$HYPR_DIR" && ! -L "$HYPR_DIR" ]]; then
+        log "First-time setup: moving hypr → hypr-personal"
+        mv "$HYPR_DIR" "$PERSONAL_DIR"
+    fi
+
+    # 3. Kill personal services that caelestia replaces
+    pkill -x waybar 2>/dev/null || true
+    pkill -x mako 2>/dev/null || true
+    pkill -x awww-daemon 2>/dev/null || true
+
+    # 4. Swap hypr symlink
+    rm -f "$HYPR_DIR"
+    ln -s "$CAELESTIA_DIR" "$HYPR_DIR"
+
+    # 5. Ensure scheme/current.conf exists (Hyprland needs it at parse time)
+    if [[ ! -f "$CAELESTIA_DIR/scheme/current.conf" ]]; then
+        cp -L --no-preserve=mode \
+            "$CAELESTIA_DIR/scheme/default.conf" \
+            "$CAELESTIA_DIR/scheme/current.conf"
+    fi
+
+    # 6. Initialize colour scheme if first time
+    local state_dir="${XDG_STATE_HOME:-$HOME/.local/state}"
+    if [[ ! -f "$state_dir/caelestia/scheme.json" ]]; then
+        caelestia scheme set -n shadotheme 2>/dev/null || true
+        sleep 0.5
+    fi
+
+    # 7. Restore caelestia's own shared files (from previous session, if any)
+    restore_configs caelestia
+
+    # 8. Reload hyprland with caelestia config
+    hyprctl reload
+
+    # 9. Wait for Hyprland IPC to respond (up to 3 seconds), then start shell + resizer
+    for _ in {1..30}; do
+        hyprctl activeworkspace >/dev/null 2>&1 && break
+        sleep 0.1
+    done
+    caelestia shell -d >/dev/null 2>&1 || true
+    caelestia resizer -d >/dev/null 2>&1 &
+    disown -a 2>/dev/null
+
+    log "Now using caelestia"
+}
+
+switch_to_personal() {
+    local current
+    current=$(current_profile)
+    if [[ "$current" == "personal" ]]; then
+        log "Already on personal"
+        return 0
+    fi
+
+    preflight_to_personal
+    acquire_lock
+
+    log "Switching to personal..."
+
+    # 1. BACK UP caelestia's configs before we overwrite them
+    snapshot_configs caelestia
+
+    # 2. Kill caelestia services
+    caelestia shell -k 2>/dev/null || true
+    pkill -f '^([^ ]*/)?(python[a-z0-9.]* )?caelestia resizer' 2>/dev/null || true
+
+    # 3. Swap hypr symlink → personal
+    rm -f "$HYPR_DIR"
+    ln -s "$PERSONAL_DIR" "$HYPR_DIR"
+
+    # 4. Restore personal configs (overwrites anything caelestia wrote)
+    restore_configs personal
+
+    # 5. Reload hyprland with personal config
+    hyprctl reload
+
+    # 6. Wait for Caelestia processes to exit completely (up to 3 seconds)
+    for _ in {1..30}; do
+        if ! pgrep -f '^([^ ]*/)?(python[a-z0-9.]* )?caelestia (shell|resizer)' >/dev/null 2>&1; then
+            break
+        fi
+        sleep 0.1
+    done
+
+    # Restart personal services
+    pgrep -x waybar >/dev/null 2>&1 || waybar >/dev/null 2>&1 &
+    pgrep -x mako >/dev/null 2>&1 || mako >/dev/null 2>&1 &
+    pgrep -x awww-daemon >/dev/null 2>&1 || awww-daemon >/dev/null 2>&1 &
+
+    # Wait for awww-daemon to initialize (up to 3 seconds)
+    for _ in {1..30}; do
+        pgrep -x awww-daemon >/dev/null 2>&1 && break
+        sleep 0.1
+    done
+
+    # 7. Re-apply last wallpaper via wall-core (handles wallust integration)
+    "$HOME/.local/bin/wallpaper-scripts/wall-core" restore 2>/dev/null || {
+        # Fallback: try saved static file
+        if [[ -f "$HOME/.cache/wall_saved_static" ]]; then
+            awww img "$(cat "$HOME/.cache/wall_saved_static")" 2>/dev/null || true
+        fi
+    }
+
+    disown -a 2>/dev/null
+    log "Now using personal config"
+}
+
+show_status() {
+    local profile
+    profile=$(current_profile)
+    echo "Profile: $profile"
+
+    if [[ -L "$HYPR_DIR" ]]; then
+        echo "  hypr → $(readlink "$HYPR_DIR")"
+    else
+        echo "  hypr: real directory (not yet initialized)"
+    fi
+
+    echo "  Personal backup: $(
+        [[ -d "$PERSONAL_DIR" ]] && echo "exists" || echo "MISSING"
+    )"
+
+    for p in personal caelestia; do
+        local n=0
+        [[ -d "$BACKUP_DIR/$p/files" ]] && n=$(find "$BACKUP_DIR/$p/files" -type f | wc -l)
+        echo "  $p snapshot: $n files"
+    done
+
+    local running=""
+    pgrep -x waybar >/dev/null 2>&1 && running+=" waybar"
+    pgrep -x mako >/dev/null 2>&1 && running+=" mako"
+    pgrep -x awww-daemon >/dev/null 2>&1 && running+=" awww"
+    pgrep -f '^([^ ]*/)?(python[a-z0-9.]* )?caelestia shell' >/dev/null 2>&1 && running+=" quickshell"
+    pgrep -f '^([^ ]*/)?(python[a-z0-9.]* )?caelestia resizer' >/dev/null 2>&1 && running+=" resizer"
+    echo "  Running:${running:- (none)}"
+}
+
+# ── Main ──
+case "${1:-}" in
+    personal)  switch_to_personal ;;
+    caelestia) switch_to_caelestia ;;
+    status)    show_status ;;
+    "")
+        # Toggle
+        if [[ "$(current_profile)" == "caelestia" ]]; then
+            switch_to_personal
+        else
+            switch_to_caelestia
+        fi
+        ;;
+    *)
+        echo "Usage: switch-dots [personal|caelestia|status]"
+        echo "  No arguments = toggle between the two"
+        exit 1
+        ;;
+esac

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Quick Note [Super+F1]
+Comment=Scratchpad note editor
+Exec=/home/faulter/.local/bin/quicknote
+Icon=accessories-notes
+Terminal=false
+Categories=Utility;
+Keywords=note;scratchpad;quick;f1;

@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# syspanel: Master notification script for mako & waybar
+# Author: Antigravity
+
+case "$1" in
+    show|history|"")
+        history_raw=$(makoctl history 2>/dev/null)
+        if [[ -z "$history_raw" ]]; then
+            notify-send -t 2000 "System" "No notifications in history."
+            exit 0
+        fi
+
+        # Format history as "• [App] Summary"
+        parsed=$(echo "$history_raw" | awk '
+        /^Notification [0-9]+:/ {
+            summary = $0
+            sub(/^Notification [0-9]+:[ \t]*/, "", summary)
+        }
+        /^[ \t]+App name:/ {
+            app = $0
+            sub(/^[ \t]+App name:[ \t]*/, "", app)
+            printf "• [%s] %s\n", app, summary
+        }')
+        
+        if [[ -z "$parsed" ]]; then
+            notify-send -t 2000 "System" "No notifications in history."
+        else
+            notify-send -t 10000 -u low "󰎟 Notification History" "$parsed"
+        fi
+        ;;
+
+    clear)
+        makoctl dismiss -a
+        notify-send -t 2000 "System" "All notifications cleared."
+        ;;
+
+    dnd-toggle|dnd)
+        if makoctl mode | grep -q "do-not-disturb"; then
+            makoctl mode -r do-not-disturb
+            notify-send -i notification-symbolic "Notifications" "Do Not Disturb OFF"
+        else
+            makoctl mode -a do-not-disturb
+        fi
+        pkill -RTMIN+9 waybar 2>/dev/null || true
+        ;;
+
+    dnd-status)
+        if makoctl mode | grep -q "do-not-disturb"; then
+            echo '{"text": "󰂛", "class": "dnd-on", "tooltip": "Do Not Disturb: ON"}'
+        else
+            echo '{"text": "󰂚", "class": "dnd-off", "tooltip": "Notifications: ON"}'
+        fi
+        ;;
+
+    *)
+        echo "Usage: syspanel {show|clear|dnd-toggle|dnd-status}"
+        exit 1
+        ;;
+esac

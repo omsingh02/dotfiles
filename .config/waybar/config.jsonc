@@ -1,0 +1,220 @@
+{
+    "reload_style_on_change": true,
+    "layer": "top",
+    "position": "top",
+    "height": 30,
+    "spacing": 0,
+    "modules-left": [
+        "hyprland/workspaces",
+        // "hyprland/window"
+        "custom/media",
+        "custom/shazam"
+    ],
+    "modules-center": [],
+    "modules-right": [
+        "custom/recording",
+        // "custom/weather",
+        "custom/updates",
+        "custom/themetoggle",
+        "network",
+        // "cpu",
+        // "temperature",
+        "memory",
+        "battery",
+        "wireplumber",
+        "custom/dnd",
+        "tray",
+        "clock"
+    ],
+    // --- MODULE DEFINITIONS ---
+    "custom/dnd": {
+        "return-type": "json",
+        "exec": "~/.local/bin/syspanel dnd-status",
+        "interval": "once",
+        "signal": 9,
+        "on-click": "~/.local/bin/syspanel dnd-toggle"
+    },
+    "custom/weather": {
+        "format": "{}",
+        "return-type": "json",
+        "exec": "~/.local/bin/weather",
+        "interval": 1800,
+        "on-click": "foot -e curl -s wttr.in"
+    },
+    "custom/media": {
+        "format": "{}",
+        "return-type": "json",
+        "exec": "~/.local/bin/mediactl-status",
+        "exec-if": "playerctl -i Shazam status 2>/dev/null | grep -qE 'Playing|Paused'",
+        "interval": 3,
+        "exec-on-event": false,
+        "on-click": "~/.local/bin/mediactl toggle",
+        "on-click-right": "~/.local/bin/smart-scratchpad spncmpcpp spncmp 'foot --app-id spncmpcpp -e ncmpcpp'",
+        "on-scroll-up": "~/.local/bin/mediactl next",
+        "on-scroll-down": "~/.local/bin/mediactl prev",
+        "signal": 11
+    },
+    "custom/themetoggle": {
+        "format": "{}",
+        "return-type": "json",
+        "exec": "~/.local/bin/wallpaper-scripts/wall-core state",
+        "on-click": "~/.local/bin/wallpaper-scripts/wall-core toggle-song",
+        "signal": 12,
+        "tooltip": true
+    },
+    "custom/recording": {
+        "return-type": "json",
+        "exec": "~/.local/bin/screenrecord status",
+        "interval": "once",
+        "signal": 13,
+        "on-click": "~/.local/bin/screenrecord stop",
+        "tooltip-format": "<span size='12000' weight='bold'>Recording Active</span>\n<span color='#cccccc'>Click to stop</span>"
+    },
+    "custom/shazam": {
+        "format": "{}",
+        "return-type": "json",
+        "exec": "/home/faulter/.local/bin/musicRecognition/shazam-waybar.sh",
+        "restart-interval": 5,
+        "on-click": "/home/faulter/.local/bin/musicRecognition/shazam-waybar.sh toggle",
+        "on-click-right": "foot --title 'Shazam History' sh -c 'bat \"$HOME/.local/share/shazam_history.txt\"; read -p \"Press enter to close...\"'",
+        "tooltip": true
+    },
+    "hyprland/workspaces": {
+        "on-click": "activate",
+        "format": "{icon}",
+        "format-icons": {
+            "default": "",
+            "1": "1",
+            "2": "2",
+            "3": "3",
+            "4": "4",
+            "5": "5",
+            "6": "6",
+            "7": "7",
+            "8": "8",
+            "9": "9",
+            "10": "0",
+            "active": "󱓻"
+        },
+        "persistent-workspaces": {
+            "1": []
+        }
+    },
+    "tray": {
+        "icon-size": 14,
+        "spacing": 8
+    },
+    "custom/updates": {
+        "format": "󰏔 {}",
+        "return-type": "json",
+        "exec": "~/.local/bin/waybar-updates",
+        "interval": 3600,
+        "on-click": "foot -e sudo paru -Syu"
+    },
+    "bluetooth": {
+        "format": "",
+        "format-off": "󰂲",
+        "format-disabled": "󰂲",
+        "format-connected": "󰂱",
+        "format-no-controller": "",
+        "tooltip-format": "Devices connected: {num_connections}",
+        "on-click": "foot -e bluetoothctl"
+    },
+    "network": {
+        "interval": 3,
+        // Click to toggle between simple text and your actual IP address
+        "format-alt": "IP: {ipaddr}",
+        "format-wifi": "󰤨  {essid} ({signalStrength}%)",
+        "format-ethernet": "󰈀  eth",
+        // CRUCIAL: Shows when you are stuck behind a captive portal or DHCP loop
+        "format-linked": "󰈁 No Internet",
+        "format-disconnected": "󰤭  off",
+        "tooltip-format-wifi": "SSID: {essid} ({frequency}GHz)\nSignal: {signalStrength}%\n󰇚 {bandwidthDownBytes} | 󰕒 {bandwidthUpBytes}\nIP: {ipaddr}",
+        "tooltip-format-ethernet": "Interface: {ifname}\n󰇚 {bandwidthDownBytes} | 󰕒 {bandwidthUpBytes}\nIP: {ipaddr}",
+        "tooltip-format-disconnected": "Disconnected",
+        // Right-click to trigger your captive portal bypass script!
+        "on-click-right": "foot -e bash -c 'portal open; exec bash'",
+        "on-click": "foot -e nmtui"
+    },
+    "cpu": {
+        "interval": 5,
+        "format": "cpu {usage}%",
+        "tooltip": true,
+        "tooltip-format": "CPU Usage: {usage}%\nFrequency: {avg_frequency}GHz",
+        "on-click": "foot -e btop"
+    },
+    "temperature": {
+        "interval": 2,
+        "hwmon-path": "/sys/class/hwmon/hwmon1/temp1_input",
+        "critical-threshold": 80,
+        "format": "{temperatureC}°C",
+        "tooltip": true,
+        "tooltip-format": "Temperature: {temperatureC}°C",
+        "on-click": "foot -e btop"
+    },
+    "memory": {
+        "interval": 2,
+        "format": "{used:0.1f}G",
+        "tooltip-format": "RAM: {used:0.1f}GB / {total:0.1f}GB\nSwap: {swapUsed:0.1f}GB",
+        "on-click": "foot -e btop"
+    },
+    "battery": {
+        "states": {
+            "warning": 30,
+            "critical": 15
+        },
+        "format": "󰁹 {capacity}%",
+        "format-charging": "󰂄 {capacity}%",
+        "format-plugged": "󰚥 {capacity}%",
+        "format-full": "󰂅 {capacity}%",
+        "format-icons": [
+            "󰂎",
+            "󰁺",
+            "󰁻",
+            "󰁼",
+            "󰁽",
+            "󰁾",
+            "󰁿",
+            "󰂀",
+            "󰂁",
+            "󰂂",
+            "󰁹"
+        ],
+        "tooltip-format": "<span size='12000' weight='bold'>Battery: {capacity}%</span>\n<span color='#cccccc'>Health: {health}% | Draw: {power}W</span>\n<span size='10000' color='#999999'><i>{timeTo} remaining</i></span>"
+    },
+    "wireplumber": {
+        "format": "󰕾 {volume}%",
+        "format-muted": "󰝟",
+        "max-volume": 100,
+        "scroll-step": 5,
+        "on-click": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle",
+        "tooltip-format": "Volume: {volume}%\n{node_name}"
+    },
+    "clock": {
+        "format": "{:%I:%M}",
+        "format-alt": "{:%a %d}",
+        "tooltip-format": "<tt><small>{calendar}</small></tt>",
+        "calendar": {
+            "mode": "month",
+            "on-scroll": 1,
+            "format": {
+                "months": "<b>{}</b>",
+                "days": "{}",
+                "weekdays": "<b>{}</b>",
+                "today": "<span background='#ffffff' color='#000000'><b>{}</b></span>"
+            }
+        },
+        "actions": {
+            "on-click-right": "mode",
+            "on-scroll-up": "shift_up",
+            "on-scroll-down": "shift_down"
+        }
+    },
+    "custom/timer": {
+        "exec": "/home/faulter/.local/bin/timebox-waybar",
+        "return-type": "json",
+        "restart-interval": 1,
+        "on-click": "/home/faulter/.local/bin/timebox-ctl",
+        "signal": 8
+    }
+}

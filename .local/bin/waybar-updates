@@ -1,0 +1,68 @@
+#!/bin/sh
+# Author: Om Singh
+# Fetches updates and generates a JSON tooltip for Waybar
+
+# 1. Fetch the last modification time and calculate days ago
+LAST_UPDATE_UNIX=$(stat -c %Y /var/lib/pacman/local/)
+CURRENT_TIME=$(date +%s)
+DIFF_SECONDS=$((CURRENT_TIME - LAST_UPDATE_UNIX))
+DIFF_DAYS=$((DIFF_SECONDS / 86400))
+
+if [ "$DIFF_DAYS" -eq 0 ]; then
+    LAST_UPDATE_TEXT="Today"
+elif [ "$DIFF_DAYS" -eq 1 ]; then
+    LAST_UPDATE_TEXT="1 day ago"
+else
+    LAST_UPDATE_TEXT="${DIFF_DAYS} days ago"
+fi
+
+# 2. Fetch updates
+REPO_UPDATES=$(checkupdates 2>/dev/null)
+AUR_UPDATES=$(paru -Qua 2>/dev/null)
+
+# 3. Exit early if nothing needs updating (but still show last update time)
+if [ -z "$REPO_UPDATES" ] && [ -z "$AUR_UPDATES" ]; then
+    TOOLTIP=$(printf "🎉 System is fully up-to-date!\n<span size='10000' style='italic' color='#a89984'>Last updated: $LAST_UPDATE_TEXT</span>")
+    jq -nc --arg text "0" --arg tooltip "$TOOLTIP" '{text: $text, tooltip: $tooltip}'
+    exit 0
+fi
+
+# 4. Safely count the packages
+REPO_COUNT=0
+[ -n "$REPO_UPDATES" ] && REPO_COUNT=$(echo "$REPO_UPDATES" | wc -l)
+
+AUR_COUNT=0
+[ -n "$AUR_UPDATES" ] && AUR_COUNT=$(echo "$AUR_UPDATES" | wc -l)
+
+TOTAL_COUNT=$((REPO_COUNT + AUR_COUNT))
+
+# Helper function to format the lists and handle truncation
+format_updates() {
+    local updates="$1"
+    local count="$2"
+    local limit=10
+
+    local list
+    list=$(echo "$updates" | head -n "$limit" | awk '{print "📦 "$1" ("$2" ➜ "$4")"}')
+
+    if [ "$count" -gt "$limit" ]; then
+        list=$(printf "%s\n...and %d more packages" "$list" $((count - limit)))
+    fi
+    echo "$list"
+}
+
+# 5. Build the tooltip (with the Last Updated text just below the header)
+TOOLTIP=$(printf "<span size='12000' weight='bold'>Available Updates: $TOTAL_COUNT</span>\n<span size='10000' style='italic' color='#a89984'>Last updated: $LAST_UPDATE_TEXT</span>")
+
+if [ "$REPO_COUNT" -gt 0 ]; then
+    REPO_LIST=$(format_updates "$REPO_UPDATES" "$REPO_COUNT")
+    TOOLTIP=$(printf "%s\n\n<b>Official Repos (%d):</b>\n<span color='#cccccc'>%s</span>" "$TOOLTIP" "$REPO_COUNT" "$REPO_LIST")
+fi
+
+if [ "$AUR_COUNT" -gt 0 ]; then
+    AUR_LIST=$(format_updates "$AUR_UPDATES" "$AUR_COUNT")
+    TOOLTIP=$(printf "%s\n\n<b>AUR (%d):</b>\n<span color='#cccccc'>%s</span>" "$TOOLTIP" "$AUR_COUNT" "$AUR_LIST")
+fi
+
+# Output properly escaped single-line JSON for Waybar
+jq -nc --arg text "$TOTAL_COUNT" --arg tooltip "$TOOLTIP" '{text: $text, tooltip: $tooltip}'

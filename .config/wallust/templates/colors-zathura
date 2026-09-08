@@ -1,0 +1,32 @@
+set default-bg "#{{background | strip}}"
+set default-fg "#{{foreground | strip}}"
+
+set statusbar-bg "#{{color0 | strip}}"
+set statusbar-fg "#{{foreground | strip}}"
+
+set inputbar-bg "#{{background | strip}}"
+set inputbar-fg "#{{foreground | strip}}"
+
+set notification-bg "#{{background | strip}}"
+set notification-fg "#{{foreground | strip}}"
+
+set notification-error-bg "#{{color1 | strip}}"
+set notification-error-fg "#{{foreground | strip}}"
+
+set notification-warning-bg "#{{color3 | strip}}"
+set notification-warning-fg "#{{foreground | strip}}"
+
+set highlight-color "#{{color4 | strip}}"
+set highlight-active-color "#{{color2 | strip}}"
+
+set completion-bg "#{{color0 | strip}}"
+set completion-fg "#{{foreground | strip}}"
+
+set completion-highlight-bg "#{{color4 | strip}}"
+set completion-highlight-fg "#{{background | strip}}"
+
+set recolor-lightcolor "#{{background | strip}}"
+set recolor-darkcolor "#{{foreground | strip}}"
+
+set recolor "true"
+set recolor-keephue "false"

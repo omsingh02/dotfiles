@@ -1,0 +1,12 @@
+#!/bin/sh
+# Author: Om Singh
+# Window switcher using hyprctl + fuzzel
+# Shows all windows, pick one to focus
+
+PICK=$(hyprctl clients -j | jq -r '.[] | select(.mapped == true) | "\(.address) [\(.workspace.name // .workspace.id)] \(.class): \(.title)"' | \
+    fuzzel -d -p "Window: " -w 80)
+
+[ -z "$PICK" ] && exit 0
+
+ADDR=$(echo "$PICK" | awk '{print $1}')
+hyprctl dispatch focuswindow address:"$ADDR"

@@ -1,0 +1,30 @@
+#!/bin/sh
+# Author: Om Singh
+# QR code encode/decode handler
+# Usage: qrhandler encode|decode
+
+case "$1" in
+    encode)
+        TEXT=$(wl-paste 2>/dev/null)
+        [ -z "$TEXT" ] && TEXT=$(fuzzel -d -p "QR Text: " <<< "")
+        [ -z "$TEXT" ] && exit 1
+        qrencode -o /tmp/qr.png -s 10 "$TEXT" && \
+            mpv --no-terminal --force-window=yes --title="QR Code" \
+                --geometry=400x400 --loop=inf /tmp/qr.png &
+        notify-send "QR Generated" "${TEXT:0:50}..."
+        ;;
+    decode)
+        grim -g "$(slurp)" /tmp/qr_scan.png 2>/dev/null || exit 1
+        RESULT=$(zbarimg -q --raw /tmp/qr_scan.png 2>/dev/null)
+        if [ -n "$RESULT" ]; then
+            echo "$RESULT" | wl-copy
+            notify-send "QR Decoded" "$RESULT"
+        else
+            notify-send -u critical "QR Decode Failed" "No QR code found in selection"
+        fi
+        ;;
+    *)
+        echo "Usage: qrhandler encode|decode"
+        exit 1
+        ;;
+esac

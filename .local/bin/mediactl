@@ -1,0 +1,181 @@
+#!/usr/bin/env bash
+# Author: Om Singh
+# Media control with notifications and album art
+# Uses playerctl for all media control
+
+NOTIFY_TAG="mediactl"
+COVER_DIR="$HOME/.cache/mpd/covers"
+
+# Extract album art from current track, cache it
+get_cover() {
+    local data art_url url album
+    if [[ -n "$PLAYER_ART_URL" ]]; then
+        art_url="$PLAYER_ART_URL"
+        url="$PLAYER_URL"
+        album="$PLAYER_ALBUM"
+    else
+        data=$(playerctl -i Shazam metadata --format '{{mpris:artUrl}}|{{xesam:url}}|{{album}}' 2>/dev/null)
+        [ -z "$data" ] && return 1
+        IFS='|' read -r art_url url album <<< "$data"
+    fi
+
+    if [[ "$art_url" == file://* ]]; then
+        echo "${art_url#file://}"
+        return 0
+    fi
+
+    # Fallback to ffmpeg extraction if we have a file path
+    local file
+    if [[ "$url" == file://* ]]; then
+        file="${url#file://}"
+        file="$(echo -e "${file//%/\\x}")"
+        if [ -f "$file" ]; then
+            [ -z "$album" ] && album="unknown"
+            local artist="${PLAYER_ARTIST:-$(playerctl -i Shazam metadata --format '{{artist}}' 2>/dev/null)}"
+            [ -z "$artist" ] && artist="unknown"
+            local cache_name="$(echo "$artist - $album" | base64 | tr '/' '_').png"
+            local cover="$COVER_DIR/$cache_name"
+
+            if [ -f "$cover" ]; then
+                echo "$cover"
+                return 0
+            fi
+
+            mkdir -p "$COVER_DIR"
+            if ffmpeg -y -i "$file" -an -vf scale=128:128 "$cover" &>/dev/null; then
+                echo "$cover"
+                return 0
+            fi
+        fi
+    fi
+
+    return 1
+}
+
+get_song_display() {
+    local data title artist url file
+    if [[ -n "$PLAYER_TITLE" ]]; then
+        title="$PLAYER_TITLE"
+        artist="$PLAYER_ARTIST"
+        url="$PLAYER_URL"
+    else
+        data=$(playerctl -i Shazam metadata --format '{{title}}|{{artist}}|{{xesam:url}}' 2>/dev/null)
+        [ -z "$data" ] && { echo "Unknown"; echo ""; return; }
+        IFS='|' read -r title artist url <<< "$data"
+    fi
+
+    if [ -z "$title" ]; then
+        if [ -n "$url" ]; then
+            file="${url#file://}"
+            title="$(basename "$file")"
+            title="$(echo -e "${title//%/\\x}")"
+        else
+            title="Unknown"
+        fi
+    fi
+
+    if [ -n "$artist" ] && [ "$artist" != "Unknown Artist" ]; then
+        echo "${title}"
+        echo "${artist}"
+    elif [ -n "$title" ]; then
+        echo "${title}"
+        echo ""
+    else
+        echo "Unknown"
+        echo ""
+    fi
+}
+
+send_notification() {
+    local raw_display="$1"
+    local title
+    local artist
+    # Read the two lines from raw_display safely
+    title="$(echo "$raw_display" | head -n 1)"
+    artist="$(echo "$raw_display" | tail -n +2)"
+
+    local icon
+    icon="$(get_cover 2>/dev/null)" || icon="audio-x-generic"
+
+    # Export DBUS session so Wayland notification daemons always catch it
+    export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus"
+
+    notify-send -a "mediactl" \
+        -h string:x-canonical-private-synchronous:"$NOTIFY_TAG" \
+        -i "$icon" \
+        "$title" "$artist"
+    pkill -RTMIN+11 waybar 2>/dev/null || true
+}
+
+do_toggle() {
+    playerctl play-pause 2>/dev/null
+    sleep 0.2
+    local status="$(playerctl status 2>/dev/null)"
+    case "$status" in
+        Playing) send_notification "$(get_song_display)" ;;
+        Paused)  send_notification "$(get_song_display)" ;;
+        *) notify-send -a "mediactl" -h string:x-canonical-private-synchronous:"$NOTIFY_TAG" -i audio-x-generic "Playback" "Stopped"; pkill -RTMIN+11 waybar 2>/dev/null || true ;;
+    esac
+}
+
+do_next() {
+    playerctl next 2>/dev/null
+}
+
+do_prev() {
+    playerctl previous 2>/dev/null
+}
+
+do_stop() {
+    playerctl stop 2>/dev/null
+    notify-send -a "mediactl" -h string:x-canonical-private-synchronous:"$NOTIFY_TAG" \
+        -i audio-x-generic "Playback" "Stopped"
+    pkill -RTMIN+11 waybar 2>/dev/null || true
+}
+
+do_seek() {
+    local amount="$1"
+    # playerctl uses OFFSET+ or OFFSET- for relative seeking
+    # We convert standard +/-OFFSET to OFFSET+/-
+    if [[ "$amount" =~ ^([+-])([0-9]+)$ ]]; then
+        amount="${BASH_REMATCH[2]}${BASH_REMATCH[1]}"
+    fi
+    playerctl position "${amount}" 2>/dev/null
+}
+
+do_repeat() {
+    local current
+    current=$(playerctl loop 2>/dev/null)
+    local icon_dir="$HOME/.local/share/icons/mediactl"
+    case "$current" in
+        None)     playerctl loop Track 2>/dev/null;    notify-send -a "mediactl" -h string:x-canonical-private-synchronous:"$NOTIFY_TAG" -i "$icon_dir/repeat-track.png" "Repeat" "Track" ;;
+        Track)    playerctl loop Playlist 2>/dev/null; notify-send -a "mediactl" -h string:x-canonical-private-synchronous:"$NOTIFY_TAG" -i "$icon_dir/repeat-playlist.png" "Repeat" "Playlist" ;;
+        Playlist) playerctl loop None 2>/dev/null;     notify-send -a "mediactl" -h string:x-canonical-private-synchronous:"$NOTIFY_TAG" -i "$icon_dir/repeat-off.png" "Repeat" "Off" ;;
+    esac
+}
+
+do_notify() {
+    local status="${PLAYER_STATUS:-$(playerctl status 2>/dev/null)}"
+    case "$status" in
+        Playing) send_notification "$(get_song_display)" ;;
+        Paused)  send_notification "$(get_song_display)" ;;
+    esac
+}
+
+case "$1" in
+    toggle)   do_toggle ;;
+    next)     do_next ;;
+    prev)     do_prev ;;
+    stop)     do_stop ;;
+    seek)     do_seek "$2" ;;
+    repeat)   do_repeat ;;
+    notify)   do_notify ;;
+    restart)
+        playerctl position 0 2>/dev/null
+        send_notification "$(get_song_display)"
+        ;;
+    *)
+        echo "Usage: mediactl {toggle|next|prev|stop|seek <+/-N>|repeat|restart|notify}"
+        exit 1
+        ;;
+esac

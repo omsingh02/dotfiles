@@ -1,0 +1,12 @@
+#!/bin/sh
+# Author: Om Singh
+# Inline calculator — type expression in fuzzel, result to clipboard + notification
+EXPR=$(fuzzel -d -p "Calc: " <<< "")
+[ -z "$EXPR" ] && exit 0
+
+RESULT=$(echo "scale=6; $EXPR" | bc -l 2>&1)
+# Strip trailing zeros
+RESULT=$(echo "$RESULT" | sed 's/\.0*$//; s/\(\.[0-9]*[1-9]\)0*$/\1/')
+
+echo "$RESULT" | wl-copy
+notify-send "📐 $EXPR" "= $RESULT (copied)"

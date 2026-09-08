@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Wallpaper Theme Picker [Super+Shift+W]
+Comment=Switch wallpaper and update dynamic themes
+Exec=/home/faulter/.local/bin/wallpaper-scripts/wall-picker
+Icon=preferences-desktop-wallpaper
+Terminal=false
+Categories=Settings;
+Keywords=wallpaper;theme;wallust;background;

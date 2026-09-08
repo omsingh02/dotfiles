@@ -1,0 +1,10 @@
+#!/bin/sh
+# Author: Om Singh
+# Color picker using hyprpicker — copies hex to clipboard + notification
+COLOR=$(hyprpicker -a 2>/dev/null)
+[ -z "$COLOR" ] && exit 1
+
+# Create a small swatch image for the notification
+convert -size 64x64 xc:"$COLOR" /tmp/colorpick.png 2>/dev/null
+
+notify-send -i /tmp/colorpick.png "Color Picked" "$COLOR"

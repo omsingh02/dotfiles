@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# Author: Om Singh
+# Interactive Fuzzel launcher for all F1-F12 and Super/Alt desktop utilities
+
+declare -a labels=(
+    "📝 Quick Note                   [Super + F1]"
+    "🔑 Password Generator           [Super + Shift + F1]"
+    "📶 Wi-Fi Network Picker         [Super + F2]"
+    "⏳ Pomodoro / Timebox Timer     [Super + Shift + F2]"
+    "🔍 Fast File Finder             [Super + F3]"
+    "📡 Wi-Fi Hotspot Toggle         [Super + F4]"
+    "🏁 QR Code Generator (Text)     [Super + F5]"
+    "📷 QR Code Scanner (Screen)     [Super + Shift + F5]"
+    "🌙 Night Light Toggle           [Super + F6]"
+    "🎵 YouTube Audio Stream        [Super + F7]"
+    "📥 YouTube Video Download      [Super + Shift + F7]"
+    "💻 System Info & Diagnostics   [Super + F8]"
+    "💾 Mount Storage Drive         [Super + F9]"
+    "⏏️ Unmount Storage Drive       [Super + F10]"
+    "🪞 Webcam Preview (Mirror)     [Super + F11]"
+    "🎨 Color Picker (HEX/RGB)      [Super + X]"
+    "🖼️ Wallpaper Theme Picker      [Super + Shift + W]"
+    "🧮 Quick Calculator            [Super + Shift + C]"
+    "🪟 Active Window Switcher      [Alt + Space]"
+    "🛑 Interactive Process Killer  [Super + Shift + Esc]"
+    "⚡ System Power / Logout Menu   [Super + BackSpace]"
+)
+
+declare -a commands=(
+    "$HOME/.local/bin/quicknote"
+    "$HOME/.local/bin/passgen"
+    "$HOME/.local/bin/wifipick"
+    "$HOME/.local/bin/timebox-ctl"
+    "$HOME/.local/bin/filefinder"
+    "$HOME/.local/bin/hotspot"
+    "$HOME/.local/bin/qrhandler encode"
+    "$HOME/.local/bin/qrhandler decode"
+    "$HOME/.local/bin/nightmode"
+    "$HOME/.local/bin/ytplay play"
+    "$HOME/.local/bin/ytplay download"
+    "$HOME/.local/bin/sysinfo"
+    "$HOME/.local/bin/drivemount mount"
+    "$HOME/.local/bin/drivemount unmount"
+    "mpv av://v4l2:/dev/video0 --demuxer-lavf-o=video_size=1280x720,input_format=mjpeg --profile=low-latency --untimed --no-cache --no-osc --title=webcam --vf=hflip"
+    "$HOME/.local/bin/colorpick"
+    "$HOME/.local/bin/wallpaper-scripts/wall-picker"
+    "$HOME/.local/bin/quickcalc"
+    "$HOME/.local/bin/winswitcher"
+    "$HOME/.local/bin/prockill"
+    "$HOME/.local/bin/sysact"
+)
+
+# Format list for fuzzel
+menu=$(printf "%s\n" "${labels[@]}")
+
+# Run fuzzel with --index to get exact selected row
+choice=$(echo "$menu" | fuzzel -d -p "⚡ Actions: " -w 50 -l 16 --index 2>/dev/null)
+
+# Execute selected command if user didn't cancel (Escape)
+if [ -n "$choice" ] && [ "$choice" -ge 0 ] 2>/dev/null; then
+    eval "${commands[$choice]}" &
+fi

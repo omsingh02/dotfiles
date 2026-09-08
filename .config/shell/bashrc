@@ -1,0 +1,84 @@
+# Bash-specific options and sourcing
+SHELL_DIR="$HOME/.config/shell"
+
+# 1. Environment
+source "$SHELL_DIR/env.sh"
+
+# Login shell? Source profile (Hyprland auto-start, etc.)
+shopt -q login_shell && source "$SHELL_DIR/profile"
+
+# Non-interactive? Stop here.
+[[ $- != *i* ]] && return
+
+# 2. Shared interactive modules
+source "$SHELL_DIR/aliases.sh"
+source "$SHELL_DIR/functions.sh"
+
+# 3. Bash options
+export HISTFILE="${XDG_STATE_HOME:-$HOME/.local/state}/bash/history"
+export HISTSIZE=1000000
+export HISTFILESIZE=1000000
+export HISTCONTROL=ignoreboth:erasedups
+
+shopt -s histappend
+shopt -s checkwinsize
+shopt -s cdspell        # Autocorrect minor typos in cd
+shopt -s dirspell       # Autocorrect directory names during completion
+shopt -s globstar       # ** matches recursively (e.g., ls **/*.txt)
+shopt -s nocaseglob     # Case-insensitive globbing
+shopt -s dotglob        # Include hidden files in glob expansion
+
+stty stop undef                            # Disable Ctrl+S terminal freeze
+
+# Readline (zsh-like menu completion)
+set -o vi
+bind 'set show-all-if-ambiguous on'        # Show completions on first Tab (no bell)
+bind 'set menu-complete-display-prefix on' # Keep common prefix, cycle suffix
+bind 'set completion-prefix-display-length 2' # Truncate long prefixes with ...
+bind 'set page-completions off'            # No --More-- paging
+bind 'set colored-stats on'               # Color completions like ls --color
+bind 'set visible-stats on'               # Show file type indicator
+bind 'set colored-completion-prefix on'   # Color the typed prefix
+bind 'set completion-ignore-case on'      # Case-insensitive completion
+bind 'set mark-symlinked-directories on'  # Append / to symlinked dirs
+bind 'set skip-completed-text on'         # Don't duplicate after cursor
+bind 'set meta-flag on'                   # Accept 8-bit input
+bind 'set input-meta on'                  # Don't strip 8th bit on input
+bind 'set output-meta on'                 # Don't strip 8th bit on output
+bind 'set convert-meta off'               # Don't convert meta to escape seq
+bind 'set show-mode-in-prompt on'         # Vi mode indicator in prompt
+bind 'set vi-ins-mode-string \1\e[6 q\2'  # Beam cursor in insert mode
+bind 'set vi-cmd-mode-string \1\e[2 q\2'  # Block cursor in normal mode
+bind 'TAB: menu-complete'                 # Tab cycles forward
+bind '"\e[Z": menu-complete-backward'     # Shift+Tab cycles backward
+bind '"\e[A": history-search-backward'    # Up: search history by prefix
+bind '"\e[B": history-search-forward'     # Down: search history by prefix
+
+# Ctrl+L / Ctrl+A in both vi modes
+bind -m vi-command 'Control-l: clear-screen'
+bind -m vi-command 'Control-a: beginning-of-line'
+bind -m vi-insert 'Control-l: clear-screen'
+bind -m vi-insert 'Control-a: beginning-of-line'
+
+# 4. Completions
+if ! shopt -oq posix; then
+    if [ -f /usr/share/bash-completion/bash_completion ]; then
+        . /usr/share/bash-completion/bash_completion
+    elif [ -f /etc/bash_completion ]; then
+        . /etc/bash_completion
+    fi
+fi
+
+# 5. Prompt
+#c_red='\[\e[1;31m\]'
+#c_yellow='\[\e[1;33m\]'
+#c_green='\[\e[1;32m\]'
+#c_blue='\[\e[1;34m\]'
+#c_magenta='\[\e[1;35m\]'
+#c_reset='\[\e[0m\]'
+#PS1="${c_red}[${c_yellow}\u${c_green}@${c_blue}\h ${c_magenta}\w${c_red}]${c_reset}\$ "
+#unset c_red c_yellow c_green c_blue c_magenta c_reset
+
+# 6. Cross-shell interactive tools (FZF, Zoxide, Pywal)
+source "$SHELL_DIR/interactive.sh"
+eval "$(starship init bash)"

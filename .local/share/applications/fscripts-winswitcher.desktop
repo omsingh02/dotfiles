@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Active Window Switcher [Alt+Space]
+Comment=Search and focus running windows
+Exec=/home/faulter/.local/bin/winswitcher
+Icon=preferences-system-windows
+Terminal=false
+Categories=System;
+Keywords=window;switch;focus;alt-tab;

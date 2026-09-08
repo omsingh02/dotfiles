@@ -1,0 +1,11 @@
+#!/bin/sh
+# Author: Om Singh
+# File finder — fd + fuzzel → xdg-open
+FILE=$(fd . ~ --type f --max-depth 4 \
+    -E .cache -E node_modules -E .local/share -E .local/state \
+    -E .mozilla -E .config/BraveSoftware -E .cargo -E .rustup \
+    -E .npm -E .git -E __pycache__ 2>/dev/null | \
+    fuzzel -d -p "Open: " -w 80)
+
+[ -z "$FILE" ] && exit 0
+xdg-open "$FILE" 2>/dev/null &

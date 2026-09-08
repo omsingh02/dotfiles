@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Author: Om Singh
+# Waybar JSON output for timebox-ctl status
+
+STATE_FILE="/tmp/timebox_end"
+
+if [ -f "$STATE_FILE" ]; then
+    end_time=$(cat "$STATE_FILE")
+    current_time=$(date +%s)
+    remaining=$(( end_time - current_time ))
+
+    if [ "$remaining" -gt 0 ]; then
+        # Format remaining time to HH:MM:SS
+        hours=$(( remaining / 3600 ))
+        minutes=$(( (remaining % 3600) / 60 ))
+        seconds=$(( remaining % 60 ))
+
+        if [ "$hours" -gt 0 ]; then
+            text=$(printf "⏳ %02d:%02d:%02d" $hours $minutes $seconds)
+        else
+            text=$(printf "⏳ %02d:%02d" $minutes $seconds)
+        fi
+
+        echo "{\"text\": \"$text\", \"class\": \"running\", \"tooltip\": \"Click to manage\"}"
+    else
+        echo "{\"text\": \"🔔 Done\", \"class\": \"done\", \"tooltip\": \"Click to manage\"}"
+    fi
+else
+    echo "{\"text\": \"⏱️ Idle\", \"class\": \"idle\", \"tooltip\": \"Click to manage\"}"
+fi

@@ -1,0 +1,12 @@
+[project]
+name = "livewall"
+version = "0.1.0"
+description = "GPU-animated wallpaper with album cover overlay for Hyprland"
+requires-python = ">=3.11"
+dependencies = [
+    "PyOpenGL>=3.1.7",
+    "Pillow>=10.0",
+]
+
+[project.scripts]
+livewall = "livewall:main"

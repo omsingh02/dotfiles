@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+# Author: Om Singh
+# System notification helper for volume and brightness
+# Uses notify-send with progress bars
+
+# Settings
+NOTIFY_TAG="sysnotify"
+ICON="dialog-information"
+
+send_notification() {
+    local value=$1
+    local icon=$2
+    local message=$3
+    
+    notify-send \
+        -h string:x-canonical-private-synchronous:$NOTIFY_TAG \
+        -h int:value:"$value" \
+        -i "$icon" \
+        "System" "$message"
+}
+
+case "$1" in
+    volume_up)
+        wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+
+        vol=$(wpctl get-volume @DEFAULT_AUDIO_SINK@ | awk '{print int($2 * 100)}')
+        muted=$(wpctl get-volume @DEFAULT_AUDIO_SINK@ | grep -q MUTED && echo "yes" || echo "no")
+        
+        if [ "$muted" = "yes" ]; then
+            icon="audio-volume-muted"
+        elif [ "$vol" -lt 30 ]; then
+            icon="audio-volume-low"
+        elif [ "$vol" -lt 70 ]; then
+            icon="audio-volume-medium"
+        else
+            icon="audio-volume-high"
+        fi
+        
+        send_notification "$vol" "$icon" "Volume: ${vol}%"
+        ;;
+        
+    volume_down)
+        wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-
+        vol=$(wpctl get-volume @DEFAULT_AUDIO_SINK@ | awk '{print int($2 * 100)}')
+        muted=$(wpctl get-volume @DEFAULT_AUDIO_SINK@ | grep -q MUTED && echo "yes" || echo "no")
+        
+        if [ "$muted" = "yes" ]; then
+            icon="audio-volume-muted"
+        elif [ "$vol" -lt 30 ]; then
+            icon="audio-volume-low"
+        elif [ "$vol" -lt 70 ]; then
+            icon="audio-volume-medium"
+        else
+            icon="audio-volume-high"
+        fi
+        
+        send_notification "$vol" "$icon" "Volume: ${vol}%"
+        ;;
+
+    volume_up_big)
+        wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 15%+
+        vol=$(wpctl get-volume @DEFAULT_AUDIO_SINK@ | awk '{print int($2 * 100)}')
+        muted=$(wpctl get-volume @DEFAULT_AUDIO_SINK@ | grep -q MUTED && echo "yes" || echo "no")
+
+        if [ "$muted" = "yes" ]; then
+            icon="audio-volume-muted"
+        elif [ "$vol" -lt 30 ]; then
+            icon="audio-volume-low"
+        elif [ "$vol" -lt 70 ]; then
+            icon="audio-volume-medium"
+        else
+            icon="audio-volume-high"
+        fi
+
+        send_notification "$vol" "$icon" "Volume: ${vol}%"
+        ;;
+
+    volume_down_big)
+        wpctl set-volume @DEFAULT_AUDIO_SINK@ 15%-
+        vol=$(wpctl get-volume @DEFAULT_AUDIO_SINK@ | awk '{print int($2 * 100)}')
+        muted=$(wpctl get-volume @DEFAULT_AUDIO_SINK@ | grep -q MUTED && echo "yes" || echo "no")
+
+        if [ "$muted" = "yes" ]; then
+            icon="audio-volume-muted"
+        elif [ "$vol" -lt 30 ]; then
+            icon="audio-volume-low"
+        elif [ "$vol" -lt 70 ]; then
+            icon="audio-volume-medium"
+        else
+            icon="audio-volume-high"
+        fi
+
+        send_notification "$vol" "$icon" "Volume: ${vol}%"
+        ;;
+        
+    volume_mute)
+        wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle
+        muted=$(wpctl get-volume @DEFAULT_AUDIO_SINK@ | grep -q MUTED && echo "yes" || echo "no")
+        
+        if [ "$muted" = "yes" ]; then
+            notify-send -h string:x-canonical-private-synchronous:$NOTIFY_TAG -i "audio-volume-muted" "System" "Volume Muted"
+        else
+            vol=$(wpctl get-volume @DEFAULT_AUDIO_SINK@ | awk '{print int($2 * 100)}')
+            send_notification "$vol" "audio-volume-high" "Volume Unmuted (${vol}%)"
+        fi
+        ;;
+        
+    mic_mute)
+        wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle
+        muted=$(wpctl get-volume @DEFAULT_AUDIO_SOURCE@ | grep -q MUTED && echo "yes" || echo "no")
+        
+        if [ "$muted" = "yes" ]; then
+            notify-send -h string:x-canonical-private-synchronous:$NOTIFY_TAG -i "microphone-sensitivity-muted" "System" "Microphone Muted"
+        else
+            notify-send -h string:x-canonical-private-synchronous:$NOTIFY_TAG -i "audio-input-microphone" "System" "Microphone Unmuted"
+        fi
+        ;;
+        
+    brightness_up)
+        brightnessctl s 5%+
+        bl=$(brightnessctl -m | awk -F, '{print substr($4, 1, length($4)-1)}')
+        send_notification "$bl" "display-brightness" "Brightness: ${bl}%"
+        ;;
+        
+    brightness_down)
+        brightnessctl s 5%-
+        bl=$(brightnessctl -m | awk -F, '{print substr($4, 1, length($4)-1)}')
+        send_notification "$bl" "display-brightness" "Brightness: ${bl}%"
+        ;;
+        
+    *)
+        echo "Usage: $0 {volume_up|volume_down|volume_up_big|volume_down_big|volume_mute|mic_mute|brightness_up|brightness_down}"
+        exit 1
+        ;;
+esac

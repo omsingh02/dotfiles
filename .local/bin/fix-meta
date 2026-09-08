@@ -1,0 +1,2 @@
+#!/bin/bash
+hyprctl dispatch submap reset && echo "submap reset OK" > /tmp/submap-fix.txt 2>&1; hyprctl reload >> /tmp/submap-fix.txt 2>&1; echo "---ERRORS---" >> /tmp/submap-fix.txt; hyprctl keyword debug:error >> /tmp/submap-fix.txt 2>&1

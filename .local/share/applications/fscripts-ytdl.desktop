@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=YouTube Video Download [Super+Shift+F7]
+Comment=Download YouTube audio or video
+Exec=/home/faulter/.local/bin/ytplay download
+Icon=folder-download
+Terminal=false
+Categories=AudioVideo;
+Keywords=youtube;yt;download;ytdlp;video;f7;

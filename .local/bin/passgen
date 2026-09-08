@@ -1,0 +1,11 @@
+#!/bin/sh
+# Author: Om Singh
+# Generate random password → clipboard + notification
+LENGTH=${1:-20}
+PASS=$(python3 -c "
+import secrets, string
+chars = string.ascii_letters + string.digits + '!@#\$%^&*_+-='
+print(''.join(secrets.choice(chars) for _ in range($LENGTH)))
+")
+echo "$PASS" | wl-copy
+notify-send "🔑 Password Generated" "${LENGTH} chars → clipboard"

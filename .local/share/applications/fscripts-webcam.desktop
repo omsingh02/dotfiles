@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Webcam Preview [Super+F11]
+Comment=Low-latency webcam mirror display
+Exec=mpv av://v4l2:/dev/video0 --demuxer-lavf-o=video_size=1280x720,input_format=mjpeg --profile=low-latency --untimed --no-cache --no-osc --title=webcam --vf=hflip
+Icon=camera-web
+Terminal=false
+Categories=AudioVideo;Video;
+Keywords=webcam;camera;mirror;video;f11;

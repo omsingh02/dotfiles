@@ -1,0 +1,28 @@
+#!/bin/sh
+# Author: Om Singh
+# System actions menu (lock, logout, reboot, shutdown) via fuzzel
+export WM="Hyprland"
+
+# Detect init system
+case "$(readlink -f /sbin/init)" in
+	*systemd*) ctl='systemctl' ;;
+	*) ctl='loginctl' ;;
+esac
+
+# Define your locker and menu here
+# Note: dmenu works via XWayland, but you might want to switch 
+# to 'wofi --dmenu', 'bemenu', or 'rofi -dmenu' for native Wayland.
+MENU="fuzzel -d"
+LOCKER="hyprlock"
+
+case "$(printf "󰌾 lock\n󰩈 leave $WM\n renew $WM\n⏾ hibernate\n reboot\n shutdown\n󰒲 sleep\n󰛧 display off" | $MENU -p 'Action: ')" in
+	'󰌾 lock') $LOCKER ;;
+	"󰩈 leave $WM") hyprctl dispatch exit ;;
+	" renew $WM") hyprctl reload ;;
+	'⏾ hibernate') $LOCKER & sleep 1 && $ctl hibernate -i ;;
+	'󰒲 sleep') $LOCKER & sleep 1 && $ctl suspend -i ;;
+	' reboot') $ctl reboot -i ;;
+	' shutdown') $ctl poweroff -i ;;
+	'󰛧 display off') sleep 1 && hyprctl dispatch dpms off ;;
+	*) exit 1 ;;
+esac

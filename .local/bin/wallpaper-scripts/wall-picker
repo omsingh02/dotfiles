@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# Author: Om Singh
+# wall-picker: Fuzzel menu for selecting wallpapers with image previews
+
+set -euo pipefail
+
+export PATH="$HOME/.local/bin:$PATH"
+# Dependencies: fuzzel, fd, imagemagick/chafa (for preview gen if needed)
+# Actually, fuzzel directly supports icons if we provide them as paths!
+# fuzzel format: "icon_path\0title"
+
+WALL_DIR="$HOME/pix/walls"
+CACHE_DIR="$HOME/.cache/wall-picker"
+mkdir -p "$CACHE_DIR"
+
+gen_preview() {
+    local file="$1"
+    local size="128x128"
+    local hash=$(echo -n "$file" | md5sum | awk '{print $1}')
+    local preview="$CACHE_DIR/${hash}.jpg"
+    
+    if [[ ! -f "$preview" ]]; then
+        # Use magick to generate a quick square thumbnail
+        # We use "${file}[0]" to grab the first frame of gifs
+        if command -v magick &>/dev/null; then
+            magick "${file}[0]" -auto-orient -thumbnail "${size}^" -gravity center -extent "$size" "$preview" 2>/dev/null || return 1
+        elif command -v convert &>/dev/null; then
+            convert "${file}[0]" -auto-orient -thumbnail "${size}^" -gravity center -extent "$size" "$preview" 2>/dev/null || return 1
+        fi
+    fi
+    echo "$preview"
+}
+
+# 1. Main Menu
+choice=$(echo -e "  Static\n󰚺  Live Shaders\n󰕧  Video\n󰸦  Toggle Song Mode\n󰅙  Stop All" | fuzzel --dmenu -l 5 -p "Wallpaper Mode: ")
+
+[[ -z "$choice" ]] && exit 0
+
+# Strip any leading icons/spaces for robust matching
+clean_choice=$(echo "$choice" | sed -E 's/^[^a-zA-Z]+//')
+
+case "$clean_choice" in
+    "Static")
+        # Ensure we capture standard output properly and pass to wall-core
+        target=$(fd -e jpg -e png -e jpeg -e webp -e gif . "$WALL_DIR/awww/" | while read -r file; do
+            name=$(basename "$file")
+            icon=$(gen_preview "$file" || builtin echo "image")
+            echo -e "$name\0icon\x1f$icon"
+        done | fuzzel --dmenu -l 10 -p "Select Image: ")
+        
+        [[ -n "$target" ]] && wall-core set awww "$WALL_DIR/awww/$target"
+        ;;
+        
+    "Live Shaders")
+        target=$(fd -e glsl . "$HOME/.local/bin/livewall/shaders/" | while read -r file; do
+            name=$(basename "$file" .glsl)
+            echo -e "$name\0icon\x1fapplications-graphics"
+        done | fuzzel --dmenu -l 10 -p "Select Shader: ")
+        
+        [[ -n "$target" ]] && wall-core set livewall "${target}.glsl"
+        ;;
+        
+    "Video")
+        target=$(fd -e mp4 -e webm -e mkv . "$WALL_DIR/mpvpaper/" | while read -r file; do
+            name=$(basename "$file")
+            echo -e "$name\0icon\x1fvideo-x-generic"
+        done | fuzzel --dmenu -l 10 -p "Select Video: ")
+        
+        [[ -n "$target" ]] && wall-core set mpvpaper "$WALL_DIR/mpvpaper/$target"
+        ;;
+        
+    "Toggle Song Mode")
+        wall-core toggle-song
+        ;;
+        
+    "Stop All")
+        wall-core stop-all
+        ;;
+esac

@@ -1,0 +1,34 @@
+#!/bin/bash
+# Author: Om Singh
+# Switch default audio output sink via fuzzel menu
+set -eu
+
+MENU="fuzzel -d"
+
+# 1. Use pactl to get a bulletproof list of available sinks (ignores wpctl's messy categories)
+sinks_info=$(pactl list sinks | awk '/^[[:space:]]*Name:/ {name=$2} /^[[:space:]]*Description:/ {desc=$0; sub(/^[[:space:]]*Description:[[:space:]]*/, "", desc); print desc " | " name}')
+
+[ -z "$sinks_info" ] && { notify-send "Error" "No audio sinks found"; exit 1; }
+
+# 2. Present the friendly list via fuzzel
+selection=$(echo "$sinks_info" | $MENU -p "Switch audio:")
+[ -z "$selection" ] && exit 0
+
+friendly_name=$(echo "$selection" | awk -F ' \\| ' '{print $1}')
+sink_name=$(echo "$selection" | awk -F ' \\| ' '{print $2}')
+
+# --- THE TRIPLE-THREAT ROUTING FIX ---
+
+# A. Set default for PulseAudio clients (Brave, Discord, older apps)
+pactl set-default-sink "$sink_name"
+
+# B. Set default for Native PipeWire clients (mpv, modern apps)
+# This directly overwrites the hardcoded 'Default Configured Devices' in WirePlumber
+pw-metadata -n settings 0 default.audio.sink "$sink_name" >/dev/null
+
+# C. Forcefully drag currently playing audio to the new speaker
+for input in $(pactl list short sink-inputs | awk '{print $1}'); do
+    pactl move-sink-input "$input" "$sink_name" 2>/dev/null || true
+done
+
+notify-send -i audio-speakers "Output Switched" "Routed to <b>$friendly_name</b>"

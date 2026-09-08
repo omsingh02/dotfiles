@@ -1,0 +1,28 @@
+# zathura Configuration File
+# Managed with dynamic Wallust theming
+
+# --- General Appearance ---
+set window-title-basename "true"
+set selection-clipboard "clipboard"
+set statusbar-home-tilde "true"
+set guioptions "" # Minimal view (no scrollbars)
+
+# --- Smooth Scrolling & Zoom ---
+set scroll-step 40
+set scroll-full-overlap 0.01
+set zoom-step 10
+set zoom-min 10
+
+# --- Page Layout & Coloring ---
+set adjust-open "width"
+set recolor "true"
+set recolor-keephue "false"
+
+# --- Default Fallback Dark Palette ---
+set default-bg "#000001"
+set default-fg "#FFFBE4"
+set recolor-lightcolor "#000001"
+set recolor-darkcolor "#FFFBE4"
+
+# --- Dynamic Wallust Colors (Absolute Path) ---
+include /home/faulter/.cache/wallust/colors-zathura

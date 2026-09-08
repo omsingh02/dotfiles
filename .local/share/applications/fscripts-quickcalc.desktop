@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Quick Calculator [Super+Shift+C]
+Comment=Interactive mathematical evaluator
+Exec=/home/faulter/.local/bin/quickcalc
+Icon=accessories-calculator
+Terminal=false
+Categories=Utility;Calculator;
+Keywords=calculator;calc;math;

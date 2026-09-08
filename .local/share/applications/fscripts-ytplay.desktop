@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=YouTube Audio Stream [Super+F7]
+Comment=Stream background audio from YouTube
+Exec=/home/faulter/.local/bin/ytplay play
+Icon=multimedia-audio-player
+Terminal=false
+Categories=AudioVideo;Audio;
+Keywords=youtube;yt;music;stream;play;audio;f7;

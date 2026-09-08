@@ -1,0 +1,207 @@
+#!/usr/bin/env bash
+# Author: Om Singh
+# wall-core: Unified wallpaper and theming manager
+# Usage:
+#   wall-core set awww /path/to/image.jpg
+#   wall-core set livewall <shader_name>
+#   wall-core set mpvpaper /path/to/video.mp4
+#   wall-core set song /path/to/cover.png
+#   wall-core stop-all     (stops everything, blanks screen)
+#   wall-core restore      (restores last static wallpaper)
+#   wall-core state        (outputs JSON for waybar)
+#   wall-core toggle-song  (toggles song mode on/off)
+
+set -euo pipefail
+
+STATE_DIR="/tmp"
+MODE_FILE="$STATE_DIR/wall_current_mode"
+SONG_DISABLE_FILE="$STATE_DIR/disable_song_theme"
+SAVED_STATIC_FILE="$HOME/.cache/wall_saved_static"
+
+SCRIPT_DIR="$HOME/.local/bin/wallpaper-scripts"
+
+log() {
+    echo "[$(date +'%H:%M:%S')] wall-core: $1"
+}
+
+get_current_mode() {
+    if [[ -f "$MODE_FILE" ]]; then
+        cat "$MODE_FILE"
+    else
+        echo "none"
+    fi
+}
+
+kill_mode() {
+    local mode_to_kill="$1"
+    log "Stopping mode: $mode_to_kill"
+    case "$mode_to_kill" in
+        livewall)
+            pkill -f livewall.py || true
+            pkill -f "python.*livewall" || true
+            sleep 0.3
+            ;;
+        mpvpaper)
+            pkill mpvpaper || true
+            sleep 0.3
+            ;;
+        awww|song)
+            # Kill awww-daemon so it doesn't block mpvpaper/livewall on the background layer
+            awww kill 2>/dev/null || true
+            sleep 0.3
+            ;;
+        *)
+            ;;
+    esac
+}
+
+ensure_awww() {
+    # Start awww-daemon if it's not running (needed for awww/song modes)
+    if ! pgrep -x awww-daemon >/dev/null 2>&1; then
+        awww-daemon &
+        disown
+        sleep 0.5
+    fi
+}
+
+stop_all() {
+    log "Stopping all wallpaper modes"
+    kill_mode "livewall"
+    kill_mode "mpvpaper"
+    awww kill 2>/dev/null || true
+    echo "none" > "$MODE_FILE"
+}
+
+restore_static() {
+    log "Restoring saved static wallpaper"
+    # Kill any non-awww wallpaper renderers
+    kill_mode "livewall"
+    kill_mode "mpvpaper"
+    ensure_awww
+    if [[ -f "$SAVED_STATIC_FILE" ]]; then
+        local saved="$(cat "$SAVED_STATIC_FILE")"
+        if [[ -f "$saved" ]]; then
+            # Call wall-awww directly instead of wall-core set to avoid recursive logging noise
+            "$SCRIPT_DIR/wall-awww" "$saved" "--restore"
+            echo "awww" > "$MODE_FILE"
+            return 0
+        fi
+    fi
+    log "No valid saved static wallpaper found."
+    # Look for a fallback wallpaper in ~/pix/walls/awww/
+    local fallback="$(find "$HOME/pix/walls/awww" -maxdepth 1 -type f \( -name '*.jpg' -o -name '*.png' -o -name '*.jpeg' -o -name '*.webp' \) 2>/dev/null | shuf -n1)"
+    if [[ -n "$fallback" && -f "$fallback" ]]; then
+        "$SCRIPT_DIR/wall-awww" "$fallback" "--restore"
+        echo "awww" > "$MODE_FILE"
+        return 0
+    fi
+    return 1
+}
+
+set_mode() {
+    local new_mode="$1"
+    local target="${2:-}"
+    local current_mode="$(get_current_mode)"
+
+    # If song theming is disabled and we try to set a song, block it
+    if [[ "$new_mode" == "song" && -f "$SONG_DISABLE_FILE" ]]; then
+        log "Song mode is disabled. Ignoring."
+        return 0
+    fi
+
+    # Kill current mode if switching to a fundamentally different renderer
+    # awww and song both use awww-daemon, so don't kill it when switching between them
+    if [[ "$current_mode" != "$new_mode" ]]; then
+        if [[ ("$current_mode" == "awww" || "$current_mode" == "song") && ("$new_mode" == "awww" || "$new_mode" == "song") ]]; then
+            # Both use awww-daemon — no need to kill anything
+            :
+        else
+            kill_mode "$current_mode"
+        fi
+    fi
+
+    echo "$new_mode" > "$MODE_FILE"
+
+    case "$new_mode" in
+        awww)
+            ensure_awww
+            "$SCRIPT_DIR/wall-awww" "$target"
+            echo "$target" > "$SAVED_STATIC_FILE"
+            ;;
+        livewall)
+            # Kill awww-daemon if running — it blocks the background layer
+            awww kill 2>/dev/null || true
+            sleep 0.3
+            "$SCRIPT_DIR/wall-livewall" "$target" &
+            disown
+            ;;
+        mpvpaper)
+            # Kill awww-daemon if running — it blocks the background layer
+            awww kill 2>/dev/null || true
+            sleep 0.3
+            "$SCRIPT_DIR/wall-mpvpaper" "$target" &
+            disown
+            ;;
+        song)
+            ensure_awww
+            # Call awww with song mode transition
+            "$SCRIPT_DIR/wall-awww" "$target" "--song"
+            ;;
+        *)
+            log "Unknown mode: $new_mode"
+            echo "none" > "$MODE_FILE"
+            exit 1
+            ;;
+    esac
+}
+
+toggle_song() {
+    if [[ -f "$SONG_DISABLE_FILE" ]]; then
+        # Enable song mode
+        rm -f "$SONG_DISABLE_FILE"
+        log "Song theming enabled."
+        # Don't wait for the next track-change event — theme what's playing now.
+        if [[ "$(playerctl -i Shazam status 2>/dev/null)" == "Playing" ]]; then
+            "$SCRIPT_DIR/wall-song" &
+            disown
+        fi
+    else
+        # Disable song mode
+        touch "$SONG_DISABLE_FILE"
+        log "Song theming disabled."
+        # If currently in song mode, restore static immediately
+        if [[ "$(get_current_mode)" == "song" ]]; then
+            restore_static
+        fi
+    fi
+    # Signal waybar module (assuming we use RTMIN+12 for this as before)
+    pkill -RTMIN+12 waybar || true
+}
+
+print_state() {
+    local enabled="true"
+    [[ -f "$SONG_DISABLE_FILE" ]] && enabled="false"
+    
+    local txt="󰸦"
+    local cls="enabled"
+    if [[ "$enabled" == "false" ]]; then
+        txt="󰸧"
+        cls="disabled"
+    fi
+    
+    local mode="$(get_current_mode)"
+    echo "{\"text\": \"$txt\", \"tooltip\": \"Mode: $mode | Song Theming: $enabled\", \"class\": \"$cls\"}"
+}
+
+cmd="${1:-}"
+case "$cmd" in
+    set)
+        if [[ $# -lt 2 ]]; then echo "Usage: wall-core set <mode> [target]"; exit 1; fi
+        set_mode "$2" "${3:-}"
+        ;;
+    stop-all) stop_all ;;
+    restore)  restore_static ;;
+    state)    print_state ;;
+    toggle-song) toggle_song ;;
+    *) echo "Usage: wall-core {set|stop-all|restore|state|toggle-song}"; exit 1 ;;
+esac

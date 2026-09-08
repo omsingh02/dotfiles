@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Interactive Process Killer [Super+Shift+Esc]
+Comment=Fuzzy search and terminate processes
+Exec=/home/faulter/.local/bin/prockill
+Icon=process-stop
+Terminal=false
+Categories=System;Monitor;
+Keywords=kill;process;stop;terminate;task;

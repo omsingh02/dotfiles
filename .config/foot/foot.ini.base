@@ -1,0 +1,17 @@
+[main]
+font=JetBrainsMonoNF-Regular:size=12
+pad=15x15
+
+[key-bindings]
+font-increase=Mod1+Shift+k
+font-decrease=Mod1+Shift+j
+search-start=Mod1+Shift+f
+clipboard-copy=Control+Shift+c
+clipboard-paste=Control+Shift+v
+scrollback-up-half-page=Mod1+k
+scrollback-down-half-page=Mod1+j
+show-urls-launch=Mod1+Shift+l
+
+[colors-dark]
+alpha=0.8
+blur=yes

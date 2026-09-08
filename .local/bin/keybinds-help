@@ -1,0 +1,9 @@
+#!/bin/sh
+# Author: Om Singh
+# Keybind cheatsheet — parse keybinds.conf and display in fuzzel
+CONF="$HOME/.config/hypr/conf/keybinds.conf"
+
+grep -E '^bind' "$CONF" | \
+    sed 's/^bind[elm]* = //; s/, exec, */  →  /' | \
+    sed 's/\$mainMod/Super/g; s/\$altMod/Alt/g' | \
+    fuzzel -d -p "🔑 Keybinds: " -w 80

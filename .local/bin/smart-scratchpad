@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# Author: Om Singh
+# Toggle Hyprland special-workspace scratchpads with intelligent re-attachment.
+# Usage: smart-scratchpad <app-id> <workspace-name> <command...>
+
+if [ "$#" -lt 3 ]; then
+    echo "Usage: $0 <app-id> <workspace-name> <command...>"
+    exit 1
+fi
+
+APP_ID="$1"
+WORKSPACE_NAME="$2"
+shift 2
+COMMAND="$*"
+TARGET_WS="special:$WORKSPACE_NAME"
+
+CLIENTS=$(hyprctl clients -j 2>/dev/null || echo "[]")
+
+# Find addresses of matching windows already on the target special workspace
+ON_SPECIAL=$(echo "$CLIENTS" | jq -r --arg class "$APP_ID" --arg ws "$TARGET_WS" \
+    '.[] | select(.class == $class and .workspace.name == $ws) | .address')
+
+# Find addresses of any matching windows anywhere on the system
+ANYWHERE=$(echo "$CLIENTS" | jq -r --arg class "$APP_ID" \
+    '.[] | select(.class == $class) | .address')
+
+# Check if the special workspace is currently visible on any monitor
+is_workspace_visible() {
+    hyprctl monitors -j 2>/dev/null | jq -e --arg ws "$TARGET_WS" \
+        '.[] | select(.specialWorkspace.name == $ws)' >/dev/null 2>&1
+}
+
+if [ -n "$ON_SPECIAL" ]; then
+    # Window is already in the special workspace: standard toggle (show/hide)
+    hyprctl dispatch togglespecialworkspace "$WORKSPACE_NAME"
+elif [ -n "$ANYWHERE" ]; then
+    # Window exists on a normal workspace (it was moved/detached).
+    # Pull it back into the special workspace!
+    for addr in $ANYWHERE; do
+        hyprctl dispatch movetoworkspacesilent "$TARGET_WS,address:$addr"
+    done
+    
+    # If the special workspace is not already visible, toggle it open
+    if ! is_workspace_visible; then
+        hyprctl dispatch togglespecialworkspace "$WORKSPACE_NAME"
+    fi
+    
+    # Focus the re-attached window
+    FIRST_ADDR=$(echo "$ANYWHERE" | head -n1)
+    if [ -n "$FIRST_ADDR" ]; then
+        hyprctl dispatch focuswindow "address:$FIRST_ADDR"
+    fi
+else
+    # Window does not exist anywhere: spawn it directly into the special workspace
+    hyprctl dispatch exec "[workspace $TARGET_WS silent] $COMMAND"
+    
+    # Wait until the window is created (up to 2 seconds)
+    for _ in {1..20}; do
+        if hyprctl clients -j 2>/dev/null | jq -e --arg class "$APP_ID" '.[] | select(.class == $class)' >/dev/null 2>&1; then
+            break
+        fi
+        sleep 0.1
+    done
+    
+    # Open the workspace if not already visible
+    if ! is_workspace_visible; then
+        hyprctl dispatch togglespecialworkspace "$WORKSPACE_NAME"
+    fi
+fi

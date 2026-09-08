@@ -1,0 +1,14 @@
+#!/bin/sh
+# Author: Om Singh
+# Process killer via fuzzel — shows top processes by CPU
+PICK=$(ps -eo pid,comm,%cpu,%mem --sort=-%cpu | tail -n +2 | head -30 | \
+    fuzzel -d -p "Kill: " -w 60)
+
+[ -z "$PICK" ] && exit 0
+
+PID=$(echo "$PICK" | awk '{print $1}')
+NAME=$(echo "$PICK" | awk '{print $2}')
+
+kill "$PID" 2>/dev/null && \
+    notify-send "Process Killed" "$NAME (PID $PID)" || \
+    notify-send -u critical "Kill Failed" "$NAME — try with sudo"

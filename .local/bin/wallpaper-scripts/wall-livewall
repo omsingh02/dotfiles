@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Author: Om Singh
+# wall-livewall: Apply a shader-based animated wallpaper using the livewall engine
+# Usage:
+#   wall-livewall <shader_name>
+
+set -euo pipefail
+
+SHADER="${1:-}"
+
+if [[ -z "$SHADER" ]]; then
+    # List available short names (file basenames)
+    echo "Usage: wall-livewall <shader_name>"
+    echo "Available shaders in ~/.local/bin/livewall/shaders/:"
+    ls -1 ~/.local/bin/livewall/shaders/ | sed 's/\.glsl//'
+    exit 1
+fi
+
+LIVEWALL_DIR=~/.local/bin/livewall
+cd "$LIVEWALL_DIR"
+
+# Append .glsl if not already provided
+[[ "$SHADER" != *.glsl ]] && SHADER="${SHADER}.glsl"
+
+# Must use system Python so venv can access Arch's GTK/GObject bindings
+if [ ! -d .venv ] || ! .venv/bin/python -c "import gi" 2>/dev/null; then
+    rm -rf .venv
+    uv venv -p /usr/bin/python3 -q
+    sed -i 's/include-system-site-packages = false/include-system-site-packages = true/' .venv/pyvenv.cfg
+    uv sync -q
+fi
+
+# We don't apply pywal for shaders. The UI theme remains whatever it was (the last static wallpaper).
+exec .venv/bin/python livewall.py --shader "$SHADER"

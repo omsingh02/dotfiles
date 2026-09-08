@@ -1,0 +1,41 @@
+# Gitignore for $HOME bare repository dotfiles
+
+# Secrets, private keys and tokens
+.config/.secrets
+*.key
+*.pem
+*.token
+.gnupg/
+.ssh/
+
+# Service credentials
+.config/gh/hosts.yml
+.config/wireguard/
+
+# Caches, logs, temporary files
+**/__pycache__/
+*.pyc
+*.log
+.cache/
+.local/share/Trash/
+.local/state/
+mimeinfo.cache
+*.tmp
+*.bak
+*~
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+.archive/
+
+# Browser profiles and language toolchains
+.mozilla/
+.zen/
+.pki/
+.gemini/
+.cargo/
+.rustup/
+.npm/
+.nvm/

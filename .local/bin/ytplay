@@ -1,0 +1,33 @@
+#!/bin/sh
+# Author: Om Singh
+# Play media URL from clipboard via mpv/yt-dlp
+# Usage: ytplay [play|download]
+
+URL=$(wl-paste 2>/dev/null)
+
+# Validate URL
+echo "$URL" | grep -qE '^https?://' || {
+    notify-send -u critical "No URL" "Clipboard doesn't contain a valid URL"
+    exit 1
+}
+
+case "${1:-play}" in
+    play)
+        notify-send "▶ Playing" "${URL:0:60}"
+        mpv --no-video --force-window=no "$URL"
+        ;;
+    video)
+        notify-send "▶ Playing Video" "${URL:0:60}"
+        mpv "$URL"
+        ;;
+    download)
+        notify-send "⬇ Downloading" "${URL:0:60}"
+        yt-dlp -o ~/Videos/'%(title)s.%(ext)s' "$URL" && \
+            notify-send "✅ Download Complete" || \
+            notify-send -u critical "❌ Download Failed"
+        ;;
+    *)
+        echo "Usage: ytplay [play|video|download]"
+        exit 1
+        ;;
+esac

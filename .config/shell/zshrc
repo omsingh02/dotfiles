@@ -1,0 +1,112 @@
+# Zsh-specific options and sourcing
+SHELL_DIR="$HOME/.config/shell"
+
+# 1. Environment
+source "$SHELL_DIR/env.sh"
+
+# Login shell? Source profile (Hyprland auto-start, etc.)
+[[ -o login ]] && source "$SHELL_DIR/profile"
+
+# Non-interactive? Stop here.
+[[ ! -o interactive ]] && return
+
+# 2. Shared interactive modules
+source "$SHELL_DIR/aliases.sh"
+source "$SHELL_DIR/functions.sh"
+
+# 3. Zsh options
+export HISTFILE="${XDG_STATE_HOME:-$HOME/.local/state}/zsh/history"
+export HISTSIZE=1000000
+export SAVEHIST=1000000
+
+setopt AUTO_CD
+setopt HIST_IGNORE_DUPS
+setopt HIST_IGNORE_SPACE
+setopt SHARE_HISTORY
+setopt INC_APPEND_HISTORY
+
+# Vi mode
+bindkey -v
+export KEYTIMEOUT=1                 # Instant ESC (10ms instead of 400ms)
+stty stop undef                      # Disable Ctrl+S terminal freeze
+setopt interactive_comments          # Allow # comments in interactive shell
+
+# Vi mode cursor shape (block=normal, beam=insert)
+function zle-keymap-select () {
+    case $KEYMAP in
+        vicmd) echo -ne '\e[1 q';;      # block
+        viins|main) echo -ne '\e[5 q';; # beam
+    esac
+}
+zle -N zle-keymap-select
+zle-line-init() { zle -K viins; echo -ne "\e[5 q"; }
+zle -N zle-line-init
+echo -ne '\e[5 q'
+preexec() { echo -ne '\e[5 q'; }
+
+# 4. Completions (dump file in XDG_CACHE_HOME)
+_zsh_cache="${XDG_CACHE_HOME:-$HOME/.cache}/zsh"
+[[ -d "$_zsh_cache" ]] || mkdir -p "$_zsh_cache"
+autoload -Uz compinit && compinit -d "$_zsh_cache/zcompdump"
+zstyle ':completion:*' menu select
+_comp_options+=(globdots)            # Include dotfiles in completion
+unset _zsh_cache
+
+# Vi keys in completion menu
+bindkey -M menuselect 'h' vi-backward-char
+bindkey -M menuselect 'k' vi-up-line-or-history
+bindkey -M menuselect 'l' vi-forward-char
+bindkey -M menuselect 'j' vi-down-line-or-history
+bindkey -v '^?' backward-delete-char
+
+# Ctrl+F: cd into fzf-selected file's directory
+bindkey -s '^f' '^ucd "$(dirname "$(fzf)")"\n'
+
+# Ctrl+E: edit command line in $EDITOR
+autoload edit-command-line; zle -N edit-command-line
+bindkey '^e' edit-command-line
+bindkey -M vicmd '^e' edit-command-line
+
+# 5. Prompt
+autoload -U colors && colors
+PS1="%B%{$fg[red]%}[%{$fg[yellow]%}%n%{$fg[green]%}@%{$fg[blue]%}%M %{$fg[magenta]%}%~%{$fg[red]%}]%{$reset_color%}$%b "
+
+# 6. Plugins (repos cloned to $XDG_DATA_HOME/zsh/plugins)
+ZSH_PLUGIN_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/zsh/plugins"
+
+zsh_load_plugin() {
+    local repo="$1"
+    local plugin_name="${repo##*/}"
+    local plugin_dir="$ZSH_PLUGIN_DIR/$plugin_name"
+
+    if [[ ! -d "$plugin_dir" ]]; then
+        echo "[shell] Installing plugin: $plugin_name..."
+        git clone --depth=1 "https://github.com/$repo.git" "$plugin_dir" 2>/dev/null
+    fi
+
+    local init_file
+    for init_file in \
+        "$plugin_dir/$plugin_name.plugin.zsh" \
+        "$plugin_dir/$plugin_name.zsh" \
+        "$plugin_dir/init.zsh"; do
+        if [[ -f "$init_file" ]]; then
+            source "$init_file"
+            return
+        fi
+    done
+}
+
+zsh_update_plugins() {
+    for dir in "$ZSH_PLUGIN_DIR"/*/; do
+        echo "[shell] Updating $(basename "$dir")..."
+        git -C "$dir" pull --ff-only 2>/dev/null
+    done
+}
+
+zsh_load_plugin "zsh-users/zsh-autosuggestions"
+
+# 7. Cross-shell interactive tools (FZF, Zoxide, Pywal)
+source "$SHELL_DIR/interactive.sh"
+
+# Must be sourced last
+zsh_load_plugin "zsh-users/zsh-syntax-highlighting"

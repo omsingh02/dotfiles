@@ -1,0 +1,191 @@
+#!/usr/bin/env bash
+# Author: Om Singh
+# Screen recording — gpu-screen-recorder (GPU-native, low overhead)
+# Usage:
+#   screenrecord toggle        # Start/stop full-screen recording
+#   screenrecord region        # Start/stop region recording
+#   screenrecord stop          # Force stop
+#   screenrecord pause         # Pause/resume
+#   screenrecord status        # Waybar JSON output
+#   screenrecord audio [src]   # Configure audio source
+#
+# Audio config stored in ~/.config/screenrecord/audio
+# Default: desktop audio only (default_output)
+
+set -euo pipefail
+
+RECORDER="gpu-screen-recorder"
+OUTDIR="$HOME/vids/sr"
+PIDFILE="/tmp/screenrecord.pid"
+CONFIG_DIR="$HOME/.config/screenrecord"
+AUDIO_FILE="$CONFIG_DIR/audio"
+
+mkdir -p "$OUTDIR" "$CONFIG_DIR"
+
+# Audio source: "none", "desktop", "mic", "both"
+get_audio_source() {
+    if [ -f "$AUDIO_FILE" ]; then
+        cat "$AUDIO_FILE"
+    else
+        echo "desktop"
+    fi
+}
+
+build_audio_args() {
+    local src
+    src=$(get_audio_source)
+    case "$src" in
+        none)    echo "" ;;
+        desktop) echo "-a default_output" ;;
+        mic)     echo "-a default_input" ;;
+        both)    echo "-a default_output -a default_input" ;;
+        *)       echo "-a $src" ;;  # custom source name
+    esac
+}
+
+is_running() {
+    [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null
+}
+
+get_monitor() {
+    hyprctl monitors -j | python3 -c "
+import json, sys
+monitors = json.load(sys.stdin)
+for m in monitors:
+    if m.get('focused'):
+        print(m['name'])
+        break
+"
+}
+
+get_refresh_rate() {
+    hyprctl monitors -j | python3 -c "
+import json, sys
+monitors = json.load(sys.stdin)
+for m in monitors:
+    if m.get('focused'):
+        print(round(m['refreshRate']))
+        break
+"
+}
+
+start_recording() {
+    local mode="${1:-fullscreen}"
+    local filename="$OUTDIR/rec-$(date +%Y%m%d-%H%M%S).mp4"
+    local monitor rr audio_args
+
+    # Ask audio source every time
+    local src
+    src=$(printf "desktop\nmic\nboth\nnone" | fuzzel --dmenu --prompt "🎙 Audio: " --lines 4 --width 20) || exit 0
+    [ -z "$src" ] && exit 0
+
+    case "$src" in
+        desktop) audio_args="-a default_output" ;;
+        mic)     audio_args="-a default_input" ;;
+        both)    audio_args="-a default_output -a default_input" ;;
+        none)    audio_args="" ;;
+        *)       audio_args="-a $src" ;;
+    esac
+
+    monitor=$(get_monitor)
+    rr=$(get_refresh_rate)
+
+    local cmd=("$RECORDER" "-f" "$rr")
+
+    if [ "$mode" = "region" ]; then
+        local geom
+        geom=$(slurp -f "%wx%h+%x+%y") || exit 0
+        cmd+=("-w" "region" "-region" "$geom")
+    else
+        cmd+=("-w" "$monitor")
+    fi
+
+    # shellcheck disable=SC2086
+    "${cmd[@]}" $audio_args -o "$filename" &
+    echo $! > "$PIDFILE"
+
+    # Check if it started successfully
+    sleep 0.5
+    if is_running; then
+        notify-send -i media-record "Recording Started" "Audio: $src | $(basename "$filename")"
+        pkill -RTMIN+13 waybar 2>/dev/null || true
+    else
+        rm -f "$PIDFILE"
+        notify-send -u critical -i dialog-error "Recording Failed" "gpu-screen-recorder failed to start"
+    fi
+}
+
+stop_recording() {
+    if is_running; then
+        local pid
+        pid=$(cat "$PIDFILE")
+        kill "$pid" 2>/dev/null
+
+        # Wait for clean shutdown (avoid corrupted file)
+        local i=0
+        while kill -0 "$pid" 2>/dev/null && [ $i -lt 30 ]; do
+            sleep 0.1
+            i=$((i + 1))
+        done
+
+        rm -f "$PIDFILE"
+
+        # Find the most recent recording
+        local latest
+        latest=$(ls -t "$OUTDIR"/rec-*.mp4 2>/dev/null | head -1)
+        if [ -n "$latest" ]; then
+            notify-send -i media-playback-stop "Recording Saved" "$(basename "$latest") in ~/vids/"
+        fi
+        pkill -RTMIN+13 waybar 2>/dev/null || true
+    fi
+}
+
+case "${1:-}" in
+    toggle)
+        if is_running; then
+            stop_recording
+        else
+            start_recording fullscreen
+        fi
+        ;;
+    region)
+        if is_running; then
+            stop_recording
+        else
+            start_recording region
+        fi
+        ;;
+    stop)
+        stop_recording
+        ;;
+    pause)
+        if is_running; then
+            pkill -USR2 -f "$RECORDER" 2>/dev/null
+            notify-send -i media-playback-pause "Recording" "Paused/Resumed"
+        fi
+        ;;
+    audio)
+        # Configure audio source
+        src="${2:-}"
+        if [ -z "$src" ]; then
+            # Interactive: show menu
+            current=$(get_audio_source)
+            src=$(printf "desktop\nmic\nboth\nnone" | fuzzel --dmenu --prompt "Audio source ($current): " --lines 4)
+            [ -z "$src" ] && exit 0
+        fi
+        echo "$src" > "$AUDIO_FILE"
+        notify-send -i audio-card "Screen Recording" "Audio source set to: $src"
+        ;;
+    status)
+        # Waybar JSON output
+        if is_running; then
+            echo '{"text": " REC", "class": "recording", "tooltip": "Click to stop"}'
+        else
+            echo '{"text": "", "class": "idle"}'
+        fi
+        ;;
+    *)
+        echo "Usage: screenrecord {toggle|region|stop|pause|audio [source]|status}"
+        exit 1
+        ;;
+esac

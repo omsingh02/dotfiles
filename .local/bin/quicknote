@@ -1,0 +1,8 @@
+#!/bin/sh
+# Author: Om Singh
+# Quick note — fuzzel prompt, appends to ~/notes.md with timestamp
+NOTE=$(fuzzel -d -p "📝 Note: " <<< "")
+[ -z "$NOTE" ] && exit 0
+
+echo "- [$(date '+%Y-%m-%d %H:%M')] $NOTE" >> ~/notes.md
+notify-send "Note Saved" "$NOTE"

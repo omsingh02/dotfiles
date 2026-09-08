@@ -1,0 +1,18 @@
+#!/bin/bash
+# Author: Om Singh
+# Fetches weather text and a detailed tooltip for Waybar
+
+# %c = condition icon, %t = temp
+TEXT=$(curl -s 'wttr.in/?format=%c+%t' 2>/dev/null)
+
+# Custom multiline tooltip format
+DATA=$(curl -s 'wttr.in/?format=%l|%C|%c|%t|%f|%w|%h|%p' 2>/dev/null)
+IFS='|' read -r loc cond icon temp feels wind hum precip <<< "$DATA"
+TOOLTIP=$(printf "<span size='12000' weight='bold'>Location: %s</span>\n<span color='#cccccc'>Condition: %s</span>\n<span color='#cccccc'>Temp: %s (Feels like %s)</span>\n<span size='10000' color='#999999'><i>Wind: %s | Hum: %s | Precip: %s</i></span>" "$loc" "$cond" "$temp" "$feels" "$wind" "$hum" "$precip")
+
+if [ -z "$TEXT" ]; then
+    echo '{"text": "⚠", "tooltip": "Weather Unavailable"}'
+else
+    # Output properly escaped single-line JSON for Waybar
+    jq -nc --arg text "$TEXT" --arg tooltip "$TOOLTIP" '{text: $text, tooltip: $tooltip}'
+fi

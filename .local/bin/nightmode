@@ -1,0 +1,12 @@
+#!/bin/sh
+# Author: Om Singh
+# Toggle wlsunset night mode
+# Uses warm 3500K temp when on
+
+if pgrep -x wlsunset > /dev/null; then
+    pkill wlsunset
+    notify-send "☀️ Night Mode Off" "Blue light filter disabled"
+else
+    wlsunset -t 3500 -T 6500 &
+    notify-send "🌙 Night Mode On" "Blue light filter enabled (3500K)"
+fi

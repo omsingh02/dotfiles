@@ -1,0 +1,63 @@
+#!/bin/sh
+# Author: Om Singh
+# Toggle WiFi Hotspot (Optimized for Hyprland)
+
+IFACE=$(nmcli -t -f DEVICE,TYPE dev | grep -E ':wifi$' | cut -d: -f1 | head -n 1)
+
+if [ -z "$IFACE" ]; then
+    notify-send -u critical "Hotspot Error" "No WiFi interface found"
+    exit 1
+fi
+
+# Check if Hotspot connection profile already exists
+if ! nmcli connection show "Hotspot" >/dev/null 2>&1; then
+    # Prompt for SSID and Password on first run
+    SSID=$(echo "MyHotspot" | fuzzel -d -p "Hotspot Name: " < /dev/null)
+    [ -z "$SSID" ] && exit 0
+
+    PASSWORD=$(fuzzel -d -p "Password (>=8 chars): " --password -w 40 < /dev/null)
+    if [ ${#PASSWORD} -lt 8 ]; then
+        notify-send -u critical "Hotspot Error" "Password must be at least 8 characters"
+        exit 1
+    fi
+
+    # Create the hotspot (force 5GHz band on a safe channel with a timeout)
+    if ! timeout 10 nmcli device wifi hotspot ifname "$IFACE" ssid "$SSID" password "$PASSWORD" band a channel 36 con-name "Hotspot" >/dev/null 2>&1; then
+        # Fallback to default (2.4GHz) if 5GHz AP is unsupported or times out
+        if ! nmcli device wifi hotspot ifname "$IFACE" ssid "$SSID" password "$PASSWORD" band bg con-name "Hotspot" >/dev/null 2>&1; then
+            notify-send -u critical "Hotspot Error" "Wi-Fi card refused to create the Access Point."
+            exit 1
+        fi
+    fi
+
+    # Generate and display QR Code natively in Hyprland
+    QR_TEXT="WIFI:S:$SSID;T:WPA;P:$PASSWORD;;"
+    qrencode -o /tmp/hotspot_qr.png -s 10 "$QR_TEXT"
+    notify-send "🔥 Hotspot Created & Started" "SSID: $SSID"
+
+    hyprctl dispatch exec "[float; center; size 400 400] imv -s full /tmp/hotspot_qr.png"
+    sleep 1 && rm -f /tmp/hotspot_qr.png # Clean up sensitive file
+    exit 0
+fi
+
+# Toggle logic (catches both 'activating' and 'activated' states)
+if nmcli -t -f NAME,STATE con show --active | grep -Eq "^Hotspot:activat(ed|ing)$"; then
+    nmcli connection down "Hotspot" >/dev/null 2>&1
+    notify-send "❄️ Hotspot Stopped" "WiFi is now free"
+else
+    if nmcli connection up "Hotspot" >/dev/null 2>&1; then
+        # Fetch actual SSID and Password from connection profile
+        SSID=$(nmcli -g 802-11-wireless.ssid connection show "Hotspot")
+        PASSWORD=$(nmcli -s -g 802-11-wireless-security.psk connection show "Hotspot")
+
+        # Generate and show QR Code
+        QR_TEXT="WIFI:S:$SSID;T:WPA;P:$PASSWORD;;"
+        qrencode -o /tmp/hotspot_qr.png -s 10 "$QR_TEXT"
+        notify-send "🔥 Hotspot Started" "SSID: $SSID"
+
+        hyprctl dispatch exec "[float; center; size 400 400] imv -s full /tmp/hotspot_qr.png"
+        sleep 1 && rm -f /tmp/hotspot_qr.png
+    else
+        notify-send -u critical "Hotspot Error" "Failed to start Hotspot"
+    fi
+fi

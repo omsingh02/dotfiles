@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# Author: Om Singh
+# Timer, stopwatch, alarm, and world clock via fuzzel
+
+STATE_FILE="/tmp/timebox_end"
+START_FILE="/tmp/timebox_start"
+PID_FILE="/tmp/timebox_pid"
+SOUND_FILE="/usr/share/sounds/freedesktop/stereo/complete.oga"
+
+# --- BACKEND LOGIC (Timers & Alarms) ---
+if [ "$1" == "--daemon-timer" ]; then
+    seconds=$2
+    echo "$(( $(date +%s) + seconds ))" > "$STATE_FILE"
+    echo "$$" > "$PID_FILE"
+    sleep "$seconds"
+    rm -f "$STATE_FILE" "$PID_FILE"
+    notify-send -u critical "Timebox" "Timer Finished!"
+    paplay "$SOUND_FILE"
+    exit 0
+fi
+
+if [ "$1" == "--daemon-alarm" ]; then
+    target=$2
+    target_epoch=$(date -d "$target" +%s)
+    current_epoch=$(date +%s)
+    if [ "$target_epoch" -le "$current_epoch" ]; then target_epoch=$(date -d "tomorrow $target" +%s); fi
+
+    echo "$target_epoch" > "$STATE_FILE"
+    echo "$$" > "$PID_FILE"
+    sleep $(( target_epoch - current_epoch ))
+    rm -f "$STATE_FILE" "$PID_FILE"
+    notify-send -u critical "Timebox" "Alarm: It is $target!"
+    paplay "$SOUND_FILE"
+    exit 0
+fi
+
+# --- FUZZEL FRONTEND LOGIC ---
+kill_existing() {
+    if [ -f "$PID_FILE" ]; then kill -9 "$(cat "$PID_FILE")" 2>/dev/null; fi
+    rm -f "$PID_FILE" "$STATE_FILE" "$START_FILE"
+}
+
+# Added Stopwatch and World Clock to the menu
+action=$(echo -e "⏳ Start Timer\n⏱️ Start Stopwatch\n⏰ Set Alarm\n🌍 World Clock\n🛑 Stop Current" | fuzzel --dmenu --prompt "Timebox: " --lines 5)
+
+case "$action" in
+    "⏳ Start Timer")
+        input=$(echo "" | fuzzel --dmenu --prompt "Duration (e.g., 5m, 1h30m): " --lines 0)
+        if [ -z "$input" ]; then exit 0; fi
+        secs=0
+        if [[ $input =~ ([0-9]+)h ]]; then secs=$((secs + BASH_REMATCH[1] * 3600)); fi
+        if [[ $input =~ ([0-9]+)m ]]; then secs=$((secs + BASH_REMATCH[1] * 60)); fi
+        if [[ $input =~ ([0-9]+)s ]]; then secs=$((secs + BASH_REMATCH[1])); fi
+        if [ "$secs" -gt 0 ]; then kill_existing; "$0" --daemon-timer "$secs" & fi
+        ;;
+
+    "⏱️ Start Stopwatch")
+        kill_existing
+        # Save the current time as the start point
+        date +%s > "$START_FILE"
+        ;;
+
+    "⏰ Set Alarm")
+        input=$(echo "" | fuzzel --dmenu --prompt "Time (HH:MM 24h format): " --lines 0)
+        if [[ "$input" =~ ^[0-2][0-9]:[0-5][0-9]$ ]]; then kill_existing; "$0" --daemon-alarm "$input" & fi
+        ;;
+
+    "🌍 World Clock")
+        # Define your preferred timezones here
+        zones=("UTC" "America/New_York" "America/Los_Angeles" "Europe/London" "Europe/Paris" "Asia/Kolkata" "Asia/Tokyo" "Australia/Sydney")
+        list=""
+        for tz in "${zones[@]}"; do
+            time=$(TZ="$tz" date +"%H:%M (%Z)")
+            list+="$tz  -  $time\n"
+        done
+        # Display the list in Fuzzel
+        echo -e "$list" | column -t | fuzzel --dmenu --prompt "World Clock: " --lines 8
+        ;;
+
+    "🛑 Stop Current")
+        kill_existing
+        notify-send "Timebox" "Stopped all active timers/alarms/stopwatches."
+        ;;
+esac

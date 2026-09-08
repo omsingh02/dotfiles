@@ -1,0 +1,42 @@
+#!/bin/bash
+# Author: Om Singh
+# Screenshot utility — saves to ~/pix/ss/ AND copies to clipboard
+# Usage: screenshot [full|region|ocr]
+
+set -euo pipefail
+
+SS_DIR="$HOME/pix/ss"
+mkdir -p "$SS_DIR"
+
+case "${1:-full}" in
+    full)
+        FILE="$SS_DIR/ss-$(date +%Y%m%d-%H%M%S).png"
+        grim "$FILE"
+        wl-copy < "$FILE"
+        notify-send -i camera-photo "Screenshot" "Saved to $(basename "$FILE") & copied"
+        ;;
+    region)
+        GEOM="$(slurp)" || exit 0
+        FILE="$SS_DIR/ss-$(date +%Y%m%d-%H%M%S).png"
+        grim -g "$GEOM" "$FILE"
+        wl-copy < "$FILE"
+        notify-send -i camera-photo "Region Screenshot" "Saved to $(basename "$FILE") & copied"
+        ;;
+    ocr)
+        GEOM="$(slurp)" || exit 0
+        TMP=$(mktemp --suffix=.png)
+        grim -g "$GEOM" "$TMP"
+        TEXT=$(tesseract "$TMP" stdout 2>/dev/null)
+        rm -f "$TMP"
+        if [ -n "$TEXT" ]; then
+            echo -n "$TEXT" | wl-copy
+            notify-send -i edit-find "OCR Complete" "$(echo "$TEXT" | head -2)"
+        else
+            notify-send -i dialog-error "OCR Failed" "No text detected"
+        fi
+        ;;
+    *)
+        echo "Usage: screenshot [full|region|ocr]"
+        exit 1
+        ;;
+esac

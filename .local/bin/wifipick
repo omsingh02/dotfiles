@@ -1,0 +1,29 @@
+#!/bin/sh
+# Author: Om Singh
+# WiFi network picker via nmcli + fuzzel
+SSID=$(nmcli -t -f SSID,SIGNAL,SECURITY dev wifi list --rescan yes 2>/dev/null | \
+    grep -v '^:' | sort -t: -k2 -rn | uniq | \
+    awk -F: '{printf "%-30s %3s%%  %s\n", $1, $2, $3}' | \
+    fuzzel -d -p "WiFi: " -w 60 | \
+    sed 's/  .*//')
+
+[ -z "$SSID" ] && exit 0
+
+# Try connecting
+OUTPUT=$(nmcli dev wifi connect "$SSID" 2>&1)
+RES=$?
+
+if [ $RES -ne 0 ] && echo "$OUTPUT" | grep -q 'Secrets were required'; then
+    # Network needs a password
+    PASS=$(fuzzel -d -p "Password: " --password -w 40 <<< "")
+    [ -z "$PASS" ] && exit 0
+    
+    OUTPUT=$(nmcli dev wifi connect "$SSID" password "$PASS" 2>&1)
+    RES=$?
+fi
+
+if [ $RES -eq 0 ]; then
+    notify-send "📶 Connected" "$SSID"
+else
+    notify-send -u critical "Connection Failed" "$SSID"
+fi

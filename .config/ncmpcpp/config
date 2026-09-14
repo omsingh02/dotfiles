@@ -1,0 +1,88 @@
+# vim: filetype=conf
+# ------------------------------------------------------------------------------
+# Connection & Directories
+# ------------------------------------------------------------------------------
+mpd_host = "localhost"
+mpd_port = "6600"
+mpd_crossfade_time = "10"
+
+ncmpcpp_directory = "~/.config/ncmpcpp"
+lyrics_directory = "~/.local/share/lyrics"
+mpd_music_dir = "~/music"
+
+# ------------------------------------------------------------------------------
+# General Display & Behavior
+# ------------------------------------------------------------------------------
+startup_screen = "playlist"
+message_delay_time = "1"
+playlist_display_mode = "columns"
+browser_display_mode = "columns"
+search_engine_display_mode = "columns"
+playlist_editor_display_mode = "columns"
+media_library_primary_tag = "album_artist"
+media_library_albums_split_by_date = "no"
+
+autocenter_mode = "yes"
+centered_cursor = "yes"
+cyclic_scrolling = "yes"
+lines_scrolled = "1"
+mouse_support = "yes"
+
+follow_now_playing_lyrics = "yes"
+fetch_lyrics_for_current_song_in_background = "yes"
+store_lyrics_in_song_dir = "no"
+lyrics_fetchers = azlyrics, genius, musixmatch, sing365, metrolyrics, justsomelyrics, jahlyrics, plyrics, tekstowo, zeneszoveg, internet
+display_volume_level = "no"
+ignore_leading_the = "yes"
+external_editor = "nvim"
+use_console_editor = "yes"
+
+# ------------------------------------------------------------------------------
+# Format Strings
+# ------------------------------------------------------------------------------
+user_interface = "classic"
+song_columns_list_format = "(25)[cyan]{a} (50)[white]{t|f} (25)[red]{b} (7f)[magenta]{l}"
+song_list_format = "{$4%a - }{%t}|{$8%f$9}$R{$3(%l)$9}"
+song_status_format = "$b{{$8\"%t\"}} $3by {$4%a{ $3in $7%b{ (%y)}} $3}|{$8%f}"
+song_library_format = "{%n - }{%t}|{%f}"
+song_window_title_format = "{%a - }{%t}|{%f}"
+
+current_item_prefix = "$(green)$r"
+current_item_suffix = "$/r$(end)"
+current_item_inactive_column_prefix = "$(magenta)$r"
+current_item_inactive_column_suffix = "$/r$(end)"
+
+now_playing_prefix = "$b$(blue)» $(end)"
+now_playing_suffix = "$/b"
+
+# ------------------------------------------------------------------------------
+# Progress Bar & Visualizer
+# ------------------------------------------------------------------------------
+progressbar_look = "─⊙ "
+progressbar_color = "black:b"
+progressbar_elapsed_color = "blue:b"
+
+visualizer_data_source = "/tmp/mpd.fifo"
+visualizer_output_name = "Visualizer"
+visualizer_type = "spectrum"
+visualizer_in_stereo = "yes"
+visualizer_look = "◆▋"
+visualizer_color = "cyan, green, yellow, magenta, red, blue"
+
+# ------------------------------------------------------------------------------
+# Colors (inherits pywal via foot terminal)
+# ------------------------------------------------------------------------------
+colors_enabled = "yes"
+empty_tag_color = "magenta"
+main_window_color = "white"
+statusbar_color = "red"
+statusbar_time_color = "cyan:b"
+volume_color = "magenta"
+state_line_color = "yellow"
+state_flags_color = "red"
+
+# ------------------------------------------------------------------------------
+# Hooks
+# ------------------------------------------------------------------------------
+# execute_on_song_change = "~/.local/bin/mediactl notify"
+execute_on_player_state_change = "pkill -RTMIN+11 waybar"

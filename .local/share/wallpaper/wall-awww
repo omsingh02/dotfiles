@@ -132,9 +132,7 @@ fi
 if [[ -f ~/.cache/theme/colors-qt.colors ]]; then
     mkdir -p ~/.config/qt5ct/colors ~/.config/qt6ct/colors
     cp ~/.cache/theme/colors-qt.colors ~/.config/qt5ct/colors/theme.colors 2>/dev/null || true
-    cp ~/.cache/theme/colors-qt.colors ~/.config/qt5ct/colors/wallust.colors 2>/dev/null || true
     cp ~/.cache/theme/colors-qt.colors ~/.config/qt6ct/colors/theme.colors 2>/dev/null || true
-    cp ~/.cache/theme/colors-qt.colors ~/.config/qt6ct/colors/wallust.colors 2>/dev/null || true
 fi
 
 # 10. Sync gsettings based on active theme mode

@@ -39,3 +39,8 @@ mimeinfo.cache
 .rustup/
 .npm/
 .nvm/
+
+# Dynamic generated themes and local secrets
+.config/btop/themes/*.theme
+.config/git/config.local
+.local/share/wallpaper/current

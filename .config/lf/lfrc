@@ -1,0 +1,119 @@
+# =============================================================================
+# BASIC SETTINGS
+# =============================================================================
+set hidden true
+set ignorecase true
+set smartcase true
+set icons true         # Requires a Nerd Font
+set drawbox true       # Draws borders around panes
+set ratios 1:2:3       # Pane width ratios (Parent:Current:Preview)
+set scrolloff 5        # Keep 5 lines above/below cursor when scrolling
+
+# Sixel Previewer Integration (Points to the script we just fixed)
+set sixel true
+set previewer ~/.config/lf/preview.sh
+set ifs "\n"
+
+# =============================================================================
+# CUSTOM COMMANDS
+# =============================================================================
+
+# Smart Open: Opens text in nvim, and media/PDFs in native Wayland apps
+cmd open ${{
+    case $(file --mime-type -Lb "$f") in
+        text/*|application/json|inode/x-empty) 
+            $EDITOR "$f" ;;
+        image/*) 
+            imv "$f" > /dev/null 2>&1 & ;;
+        application/pdf) 
+            zathura "$f" > /dev/null 2>&1 & ;;
+        video/*|audio/*) 
+            mpv "$f" > /dev/null 2>&1 & ;;
+        *) 
+            xdg-open "$f" > /dev/null 2>&1 & ;;
+    esac
+}}
+
+# Set Wallpaper via wall-core
+cmd set_wallpaper &{{
+    case $(file --mime-type -Lb "$f") in
+        image/*)
+            wall-core set awww "$f" ;;
+        *)
+            notify-send -a "Wallpaper" -u low "Wallpaper" "Not an image: $(basename "$f")" ;;
+    esac
+}}
+
+# FZF Search: Fuzzy find files in the current directory and jump to them
+cmd fzf_jump ${{
+    res="$(find . -maxdepth 5 -type f 2>/dev/null | fzf --reverse --header='Jump to file')"
+    if [ -n "$res" ]; then
+        lf -remote "send $id select \"$res\""
+    fi
+}}
+
+# Zoxide Jump: Fuzzy find your zoxide database and cd into it
+cmd zoxide_jump ${{
+    res="$(zoxide query -l | fzf --reverse --header='Zoxide Jump')"
+    if [ -n "$res" ]; then
+        lf -remote "send $id cd \"$res\""
+    fi
+}}
+
+# Wayland Drag and Drop (Requires 'ripdrag' installed)
+cmd drag_out ${{
+    ripdrag -a -x "$f" > /dev/null 2>&1 &
+}}
+
+# Extract Archives
+cmd extract ${{
+    set -f
+    case $f in
+        *.tar.bz|*.tar.bz2|*.tbz|*.tbz2) tar xjvf "$f";;
+        *.tar.gz|*.tgz) tar xzvf "$f";;
+        *.tar.xz|*.txz) tar xJvf "$f";;
+        *.zip) unzip "$f";;
+        *.rar) unrar x "$f";;
+        *.7z) 7z x "$f";;
+    esac
+}}
+
+# Bulk Rename using your EDITOR (Requires 'vidir' or just simple shell magic)
+cmd bulk_rename ${{
+    old_name="$f"
+    lf -remote "send $id push :rename<space>"
+}}
+
+# Make executable
+cmd chmod_x %chmod +x "$f"
+
+# =============================================================================
+# KEYBINDINGS
+# =============================================================================
+
+# Navigation (Vim style)
+map h updir
+map j down
+map k up
+map l open
+
+# Jumps
+map gh cd ~
+map gc cd ~/.config
+map gl cd ~/.local/share
+map gd cd ~/Downloads
+
+# Advanced Functions
+map f fzf_jump           # 'f' to fuzzy find files
+map z zoxide_jump        # 'z' to use zoxide
+map x extract            # 'x' to extract archive
+map <c-n> drag_out       # 'Ctrl+N' to drag-and-drop a file to another Wayland window
+map <c-t> set_wallpaper  # 'Ctrl+T' to set current image as wallpaper
+map cx chmod_x           # 'cx' to make a script executable
+map e $$EDITOR "$f"      # 'e' to force edit a file, even if it's not text
+
+# File Operations
+map a push %mkdir<space> # 'a' to add directory
+map A push %touch<space> # 'A' to add file
+map R bulk_rename        # 'R' to rename
+map D push %rm -rf<space># 'D' to delete (Use with caution)

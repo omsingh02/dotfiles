@@ -22,12 +22,8 @@ try:
     from material.score import score
     from material.generator import gen_scheme
 except ImportError:
-    try:
-        from caelestia.utils.material.score import score
-        from caelestia.utils.material.generator import gen_scheme
-    except ImportError:
-        score = None
-        gen_scheme = None
+    score = None
+    gen_scheme = None
 
 def hex_to_ansi(hex_color: str, code: int, index: int | None = None) -> str:
     color = hex_color.lstrip("#")
@@ -538,7 +534,6 @@ theme[upload_end]="#{cmap['color4']}"
     btop_dir = Path.home() / ".config" / "btop" / "themes"
     btop_dir.mkdir(parents=True, exist_ok=True)
     (btop_dir / "theme.theme").write_text(btop_theme)
-    (btop_dir / "wallust.theme").write_text(btop_theme)
 
     # 14. Synchronize Antigravity IDE themes atomically
     sync_antigravity_theme(out_dir)

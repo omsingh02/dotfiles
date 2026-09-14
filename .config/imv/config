@@ -1,0 +1,23 @@
+# imv Configuration File
+# Clean, dark aesthetic for image viewing
+
+[options]
+# Clean aesthetic with dark gray background to prevent blinding flashes on PNGs
+background = 111111
+
+# Hide status until tilde is pressed, just show the actual image
+overlay = false
+overlay_font = Inter:12
+overlay_text_color = ffffff
+overlay_background_alpha = 99
+
+# Zoom behavior
+upscaling_method = linear
+
+[aliases]
+# Simple q to quit is usually default but good to be explicit
+q = quit
+
+[binds]
+# Set current image as wallpaper via wall-core
+<Ctrl+t> = exec wall-core set awww "$imv_current_file" &

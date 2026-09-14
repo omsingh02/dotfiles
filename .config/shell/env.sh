@@ -26,6 +26,7 @@ export GRADLE_USER_HOME="$XDG_DATA_HOME/gradle"
 export CUDA_CACHE_PATH="$XDG_CACHE_HOME/nv"
 export ANDROID_USER_HOME="$XDG_DATA_HOME/android"
 export NODE_REPL_HISTORY="$XDG_DATA_HOME/node_repl_history"
+export MYSQL_HISTFILE="$XDG_STATE_HOME/mariadb_history"
 export IPYTHONDIR="$XDG_CONFIG_HOME/ipython"
 export JUPYTER_CONFIG_DIR="$XDG_CONFIG_HOME/jupyter"
 

@@ -1,9 +1,9 @@
 # Login shell hook (sourced by ~/.bash_profile or zprofile)
 # Auto-start Hyprland on TTY1
 if [[ -z "$DISPLAY" && -z "$WAYLAND_DISPLAY" && "$(tty)" == "/dev/tty1" ]]; then
-    # Ensure baseline theme colors exist before Hyprland parses hyprland.conf on cold boot
+    # Ensure baseline theme colors exist before Hyprland & Waybar parse configs on cold boot
+    mkdir -p "$HOME/.cache/theme"
     if [ ! -f "$HOME/.cache/theme/colors-hyprland.conf" ]; then
-        mkdir -p "$HOME/.cache/theme"
         cat << 'EOF' > "$HOME/.cache/theme/colors-hyprland.conf"
 $background = rgb(0A0F0F)
 $foreground = rgb(DCE8E6)
@@ -34,6 +34,40 @@ $on_surface = rgb(DCE8E6)
 $surface_container = rgb(131B1A)
 $outline = rgb(6D7876)
 $error = rgb(FA746F)
+EOF
+    fi
+
+    if [ ! -f "$HOME/.cache/theme/colors-waybar.css" ]; then
+        cat << 'EOF' > "$HOME/.cache/theme/colors-waybar.css"
+@define-color background #0A0F0F;
+@define-color foreground #DCE8E6;
+@define-color cursor #9BD0CC;
+@define-color color0 #343434;
+@define-color color1 #769E00;
+@define-color color2 #58E2BE;
+@define-color color3 #82FCCC;
+@define-color color4 #76B6B2;
+@define-color color5 #7AAEE9;
+@define-color color6 #83D9C8;
+@define-color color7 #CDDCD3;
+@define-color color8 #9AA59E;
+@define-color color9 #85B900;
+@define-color color10 #45F7CE;
+@define-color color11 #CEFFE8;
+@define-color color12 #A4C8C2;
+@define-color color13 #A2C0F7;
+@define-color color14 #8CEDD8;
+@define-color color15 #FFFFFF;
+@define-color primary #9BD0CC;
+@define-color on_primary #0D4845;
+@define-color primary_container #255B57;
+@define-color secondary #B0CCC9;
+@define-color tertiary #D5EFFF;
+@define-color surface #0A0F0F;
+@define-color on_surface #DCE8E6;
+@define-color surface_container #131B1A;
+@define-color outline #6D7876;
+@define-color error #FA746F;
 EOF
     fi
     exec start-hyprland

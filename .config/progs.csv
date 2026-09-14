@@ -42,7 +42,7 @@
 ,neovim,Vim-fork focused on extensibility and usability
 ,ttf-jetbrains-mono-nerd,Patched font JetBrains Mono from nerd fonts
 ,noto-fonts-emoji,Google Noto Color Emoji
-A,awww,Animated wallpaper daemon with dynamic transitions
+,awww,Animated wallpaper daemon with dynamic transitions
 A,gpu-screen-recorder,Very fast screen recorder with AMD/NVIDIA hardware acceleration
 A,hyprpicker,wlroots-compatible color picker
 A,python-materialyoucolor,Material Design 3 color utility for Python
@@ -61,3 +61,4 @@ A,paru,Feature packed AUR helper and pacman wrapper
 ,libnotify,Library for sending desktop notifications
 ,python-pillow,Python Imaging Library fork
 A,pokemon-colorscripts-git,CLI utility to print out images of pokemon in terminal
+,python-pip,The PyPA recommended tool for installing Python packages

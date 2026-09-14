@@ -112,15 +112,6 @@
         "interval": 3600,
         "on-click": "foot -e sudo paru -Syu"
     },
-    "bluetooth": {
-        "format": "",
-        "format-off": "󰂲",
-        "format-disabled": "󰂲",
-        "format-connected": "󰂱",
-        "format-no-controller": "",
-        "tooltip-format": "Devices connected: {num_connections}",
-        "on-click": "foot -e bluetoothctl"
-    },
     "network": {
         "interval": 5,
         // Click to toggle between simple text and your actual IP address

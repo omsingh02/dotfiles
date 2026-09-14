@@ -238,7 +238,7 @@ vim.lsp.config("sqls", {
   settings = { sqls = {
     connections = {{
       driver = "mysql",
-      dataSourceName = "faulter@unix(/run/mysqld/mysqld.sock)/",
+      dataSourceName = (vim.env.USER or "root") .. "@unix(/run/mysqld/mysqld.sock)/",
     }},
   }},
 })

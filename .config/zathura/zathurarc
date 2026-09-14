@@ -25,4 +25,4 @@ set recolor-lightcolor "#000001"
 set recolor-darkcolor "#FFFBE4"
 
 # --- Dynamic Theme Colors (Absolute Path) ---
-include /home/faulter/.cache/theme/colors-zathura
+include ../../.cache/theme/colors-zathura

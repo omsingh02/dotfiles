@@ -2,7 +2,7 @@
 Type=Application
 Name=Mount Storage Drive [Super+F9]
 Comment=Mount external USB or storage drive
-Exec=/home/faulter/.local/bin/drivemount mount
+Exec=drivemount mount
 Icon=drive-harddisk
 Terminal=false
 Categories=System;

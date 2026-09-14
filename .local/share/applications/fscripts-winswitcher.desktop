@@ -2,7 +2,7 @@
 Type=Application
 Name=Active Window Switcher [Alt+Space]
 Comment=Search and focus running windows
-Exec=/home/faulter/.local/bin/winswitcher
+Exec=winswitcher
 Icon=preferences-system-windows
 Terminal=false
 Categories=System;

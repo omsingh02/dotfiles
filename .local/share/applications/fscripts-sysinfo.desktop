@@ -2,7 +2,7 @@
 Type=Application
 Name=System Info & Diagnostics [Super+F8]
 Comment=Hardware diagnostics OSD (CPU, RAM, Battery)
-Exec=/home/faulter/.local/bin/sysinfo
+Exec=sysinfo
 Icon=utilities-system-monitor
 Terminal=false
 Categories=System;

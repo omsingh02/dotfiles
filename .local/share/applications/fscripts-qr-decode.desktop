@@ -2,7 +2,7 @@
 Type=Application
 Name=QR Code Scanner [Super+Shift+F5]
 Comment=Capture and scan QR code from screen
-Exec=/home/faulter/.local/bin/qrhandler decode
+Exec=qrhandler decode
 Icon=camera-photo
 Terminal=false
 Categories=Utility;

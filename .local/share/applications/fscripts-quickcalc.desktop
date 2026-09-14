@@ -2,7 +2,7 @@
 Type=Application
 Name=Quick Calculator [Super+Shift+C]
 Comment=Interactive mathematical evaluator
-Exec=/home/faulter/.local/bin/quickcalc
+Exec=quickcalc
 Icon=accessories-calculator
 Terminal=false
 Categories=Utility;Calculator;

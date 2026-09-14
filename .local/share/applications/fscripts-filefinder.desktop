@@ -2,7 +2,7 @@
 Type=Application
 Name=Fast File Finder [Super+F3]
 Comment=Instant fuzzy file search
-Exec=/home/faulter/.local/bin/filefinder
+Exec=filefinder
 Icon=system-search
 Terminal=false
 Categories=Utility;

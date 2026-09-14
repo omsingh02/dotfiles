@@ -2,7 +2,7 @@
 Type=Application
 Name=Password Generator [Super+Shift+F1]
 Comment=Generate secure random passwords
-Exec=/home/faulter/.local/bin/passgen
+Exec=passgen
 Icon=dialog-password
 Terminal=false
 Categories=Utility;Security;

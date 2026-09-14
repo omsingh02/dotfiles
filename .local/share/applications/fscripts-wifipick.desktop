@@ -2,7 +2,7 @@
 Type=Application
 Name=Wi-Fi Network Picker [Super+F2]
 Comment=Scan and connect to wireless networks
-Exec=/home/faulter/.local/bin/wifipick
+Exec=wifipick
 Icon=network-wireless
 Terminal=false
 Categories=Settings;Network;

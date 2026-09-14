@@ -2,7 +2,7 @@
 Type=Application
 Name=YouTube Video Download [Super+Shift+F7]
 Comment=Download YouTube audio or video
-Exec=/home/faulter/.local/bin/ytplay download
+Exec=ytplay download
 Icon=folder-download
 Terminal=false
 Categories=AudioVideo;

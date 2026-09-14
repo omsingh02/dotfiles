@@ -2,7 +2,7 @@
 Type=Application
 Name=QR Code Generator [Super+F5]
 Comment=Generate QR code from text or clipboard
-Exec=/home/faulter/.local/bin/qrhandler encode
+Exec=qrhandler encode
 Icon=camera-web
 Terminal=false
 Categories=Utility;

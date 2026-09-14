@@ -2,7 +2,7 @@
 Type=Application
 Name=Timebox / Pomodoro Timer [Super+Shift+F2]
 Comment=Productivity timer and focus sessions
-Exec=/home/faulter/.local/bin/timebox-ctl
+Exec=timebox-ctl
 Icon=accessories-clock
 Terminal=false
 Categories=Utility;

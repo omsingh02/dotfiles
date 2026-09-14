@@ -34,11 +34,9 @@ window#waybar {
 #clock,
 #wireplumber,
 #network,
-#cpu,
 #memory,
 #battery,
 #tray,
-#temperature,
 #custom-updates,
 #custom-media,
 #custom-recording,
@@ -58,7 +56,6 @@ window#waybar {
 #clock:hover,
 #wireplumber:hover,
 #network:hover,
-#cpu:hover,
 #memory:hover,
 #battery:hover,
 #custom-updates:hover,
@@ -154,12 +151,6 @@ window#waybar {
 }
 
 #battery.critical:not(.charging) {
-    background-color: alpha(@color1, 0.2);
-    color: @color1;
-    animation: blink 1s linear infinite alternate;
-}
-
-#temperature.critical {
     background-color: alpha(@color1, 0.2);
     color: @color1;
     animation: blink 1s linear infinite alternate;

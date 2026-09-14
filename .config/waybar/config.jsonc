@@ -17,8 +17,6 @@
         "custom/updates",
         "custom/themetoggle",
         "network",
-        // "cpu",
-        // "temperature",
         "memory",
         "battery",
         "wireplumber",
@@ -127,22 +125,6 @@
         // Right-click to trigger your captive portal bypass script!
         "on-click-right": "foot -e bash -c 'portal open; exec bash'",
         "on-click": "foot -e nmtui"
-    },
-    "cpu": {
-        "interval": 5,
-        "format": "cpu {usage}%",
-        "tooltip": true,
-        "tooltip-format": "CPU Usage: {usage}%\nFrequency: {avg_frequency}GHz",
-        "on-click": "foot -e btop"
-    },
-    "temperature": {
-        "interval": 2,
-        "hwmon-path": "/sys/class/hwmon/hwmon1/temp1_input",
-        "critical-threshold": 80,
-        "format": "{temperatureC}°C",
-        "tooltip": true,
-        "tooltip-format": "Temperature: {temperatureC}°C",
-        "on-click": "foot -e btop"
     },
     "memory": {
         "interval": 2,

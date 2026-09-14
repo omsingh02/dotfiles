@@ -1,5 +1,4 @@
 [main]
-shell=/usr/bin/zsh
 font=JetBrainsMonoNF-Regular:size=12
 pad=15x15
 

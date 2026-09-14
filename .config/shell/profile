@@ -1,5 +1,40 @@
 # Login shell hook (sourced by ~/.bash_profile or zprofile)
 # Auto-start Hyprland on TTY1
 if [[ -z "$DISPLAY" && -z "$WAYLAND_DISPLAY" && "$(tty)" == "/dev/tty1" ]]; then
+    # Ensure baseline theme colors exist before Hyprland parses hyprland.conf on cold boot
+    if [ ! -f "$HOME/.cache/theme/colors-hyprland.conf" ]; then
+        mkdir -p "$HOME/.cache/theme"
+        cat << 'EOF' > "$HOME/.cache/theme/colors-hyprland.conf"
+$background = rgb(0A0F0F)
+$foreground = rgb(DCE8E6)
+$cursor = rgb(9BD0CC)
+$color0 = rgb(343434)
+$color1 = rgb(769E00)
+$color2 = rgb(58E2BE)
+$color3 = rgb(82FCCC)
+$color4 = rgb(76B6B2)
+$color5 = rgb(7AAEE9)
+$color6 = rgb(83D9C8)
+$color7 = rgb(CDDCD3)
+$color8 = rgb(9AA59E)
+$color9 = rgb(85B900)
+$color10 = rgb(45F7CE)
+$color11 = rgb(CEFFE8)
+$color12 = rgb(A4C8C2)
+$color13 = rgb(A2C0F7)
+$color14 = rgb(8CEDD8)
+$color15 = rgb(FFFFFF)
+$primary = rgb(9BD0CC)
+$on_primary = rgb(0D4845)
+$primary_container = rgb(255B57)
+$secondary = rgb(B0CCC9)
+$tertiary = rgb(D5EFFF)
+$surface = rgb(0A0F0F)
+$on_surface = rgb(DCE8E6)
+$surface_container = rgb(131B1A)
+$outline = rgb(6D7876)
+$error = rgb(FA746F)
+EOF
+    fi
     exec start-hyprland
 fi

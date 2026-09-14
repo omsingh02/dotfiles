@@ -23,6 +23,7 @@
 ,imv,Command-line image viewer for Wayland and X11
 ,mpv,Command line video player
 ,ffmpeg,Complete cross-platform solution to record convert and stream audio and video
+,zsh,Z shell advanced interactive command interpreter
 ,starship,The cross-shell prompt for astronauts
 ,zoxide,A smarter cd command for your terminal
 ,fzf,Command-line fuzzy finder

@@ -2,9 +2,11 @@
 # Author: Om Singh
 # Timer, stopwatch, alarm, and world clock via fuzzel
 
-STATE_FILE="/tmp/timebox_end"
-START_FILE="/tmp/timebox_start"
-PID_FILE="/tmp/timebox_pid"
+STATE_DIR="${XDG_RUNTIME_DIR:-/tmp/user-$(id -u)}"
+mkdir -p "$STATE_DIR"
+STATE_FILE="$STATE_DIR/timebox_end"
+START_FILE="$STATE_DIR/timebox_start"
+PID_FILE="$STATE_DIR/timebox_pid"
 SOUND_FILE="/usr/share/sounds/freedesktop/stereo/complete.oga"
 
 # --- BACKEND LOGIC (Timers & Alarms) ---
@@ -15,7 +17,7 @@ if [ "$1" == "--daemon-timer" ]; then
     sleep "$seconds"
     rm -f "$STATE_FILE" "$PID_FILE"
     notify-send -u critical "Timebox" "Timer Finished!"
-    paplay "$SOUND_FILE"
+    [ -f "$SOUND_FILE" ] && paplay "$SOUND_FILE" 2>/dev/null || printf '\a'
     exit 0
 fi
 
@@ -30,7 +32,7 @@ if [ "$1" == "--daemon-alarm" ]; then
     sleep $(( target_epoch - current_epoch ))
     rm -f "$STATE_FILE" "$PID_FILE"
     notify-send -u critical "Timebox" "Alarm: It is $target!"
-    paplay "$SOUND_FILE"
+    [ -f "$SOUND_FILE" ] && paplay "$SOUND_FILE" 2>/dev/null || printf '\a'
     exit 0
 fi
 

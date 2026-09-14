@@ -1,0 +1,13 @@
+[Unit]
+Description=WhatsApp Web Local Archive Server
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/dox/repos/wa-notify/local-server
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

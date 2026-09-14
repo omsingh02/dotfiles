@@ -1,43 +1,43 @@
 #!/usr/bin/env bash
-# syspanel: Master notification script for mako & waybar
-# Author: Antigravity
+# Author: Om Singh
+# syspanel: Notification panel controller for mako & waybar
 
 case "$1" in
     show|history|"")
-        history_raw=$(makoctl history 2>/dev/null)
-        if [[ -z "$history_raw" ]]; then
-            notify-send -t 2000 "System" "No notifications in history."
-            exit 0
-        fi
+        json=$(makoctl history -j 2>/dev/null)
+        count=$(echo "$json" | jq '[.data[0][]? | .summary.data] | length' 2>/dev/null)
 
-        # Format history as "• [App] Summary"
-        parsed=$(echo "$history_raw" | awk '
-        /^Notification [0-9]+:/ {
-            summary = $0
-            sub(/^Notification [0-9]+:[ \t]*/, "", summary)
-        }
-        /^[ \t]+App name:/ {
-            app = $0
-            sub(/^[ \t]+App name:[ \t]*/, "", app)
-            printf "• [%s] %s\n", app, summary
-        }')
-        
-        if [[ -z "$parsed" ]]; then
-            notify-send -t 2000 "System" "No notifications in history."
+        if [[ -z "$count" || "$count" == "0" ]]; then
+            notify-send -a syspanel -t 2000 \
+                -h string:x-canonical-private-synchronous:syspanel \
+                "Notifications" "No history"
         else
-            notify-send -t 10000 -u low "󰎟 Notification History" "$parsed"
+            body=$(echo "$json" | jq -r '
+                [.data[0][]? |
+                    "<b>\(.summary.data)</b>" +
+                    (if .body.data != "" then "  <span alpha=\"60%\">\(.body.data[:80])</span>" else "" end) +
+                    (if .["app-name"].data != "" then " <span alpha=\"40%\">· \(.["app-name"].data)</span>" else "" end)
+                ] | join("\n")
+            ' 2>/dev/null)
+            notify-send -a syspanel -t 10000 \
+                -h string:x-canonical-private-synchronous:syspanel \
+                "Notifications ($count)" "$body"
         fi
         ;;
 
     clear)
-        makoctl dismiss -a
-        notify-send -t 2000 "System" "All notifications cleared."
+        makoctl dismiss -a 2>/dev/null
+        notify-send -a syspanel -t 1500 \
+            -h string:x-canonical-private-synchronous:syspanel \
+            "Notifications" "Cleared"
         ;;
 
     dnd-toggle|dnd)
         if makoctl mode | grep -q "do-not-disturb"; then
             makoctl mode -r do-not-disturb
-            notify-send -i notification-symbolic "Notifications" "Do Not Disturb OFF"
+            notify-send -a syspanel -t 2000 \
+                -h string:x-canonical-private-synchronous:syspanel \
+                "Notifications" "Do Not Disturb OFF"
         else
             makoctl mode -a do-not-disturb
         fi
@@ -46,9 +46,9 @@ case "$1" in
 
     dnd-status)
         if makoctl mode | grep -q "do-not-disturb"; then
-            echo '{"text": "󰂛", "class": "dnd-on", "tooltip": "Do Not Disturb: ON"}'
+            echo '{"text": "󰂛", "class": "dnd-on", "tooltip": "Do Not Disturb"}'
         else
-            echo '{"text": "󰂚", "class": "dnd-off", "tooltip": "Notifications: ON"}'
+            echo '{"text": "󰂚", "class": "dnd-off", "tooltip": "Notifications"}'
         fi
         ;;
 

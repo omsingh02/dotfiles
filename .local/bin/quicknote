@@ -4,5 +4,6 @@
 NOTE=$(fuzzel -d -p "📝 Note: " <<< "")
 [ -z "$NOTE" ] && exit 0
 
-echo "- [$(date '+%Y-%m-%d %H:%M')] $NOTE" >> ~/notes.md
-notify-send "Note Saved" "$NOTE"
+NOTES_FILE="${NOTES_FILE:-$(xdg-user-dir DOCUMENTS 2>/dev/null || echo "$HOME/Documents")/notes.md}"
+echo "- [$(date '+%Y-%m-%d %H:%M')] $NOTE" >> "$NOTES_FILE"
+notify-send -a quicknote "Note Saved" "$NOTE"

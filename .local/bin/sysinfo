@@ -1,18 +1,33 @@
 #!/bin/sh
 # Author: Om Singh
 # System info popup via notification
-BAT=$(cat /sys/class/power_supply/BAT*/capacity 2>/dev/null | head -1)
-BAT_STATUS=$(cat /sys/class/power_supply/BAT*/status 2>/dev/null | head -1)
+BAT=$(cat /sys/class/power_supply/BAT1/capacity 2>/dev/null || echo "N/A")
+BAT_STATUS=$(cat /sys/class/power_supply/BAT1/status 2>/dev/null || echo "N/A")
 MEM=$(free -h | awk '/Mem/{print $3"/"$2}')
 LOAD=$(cat /proc/loadavg | awk '{print $1, $2, $3}')
 UPTIME=$(uptime -p | sed 's/up //')
-IP=$(curl -s --max-time 3 ifconfig.me || echo "N/A")
 DISK=$(df -h / | awk 'NR==2{print $3"/"$2" ("$5")"}')
 
-notify-send -t 15000 "System Info" "\
-CPU Load: $LOAD
-Memory:   $MEM
-Disk /:   $DISK
-Battery:  ${BAT:-N/A}% (${BAT_STATUS:-N/A})
-Uptime:   $UPTIME
-Public IP: $IP"
+# Show immediately with local data, fetch IP async
+notify-send -a sysinfo -t 15000 \
+    -h string:x-canonical-private-synchronous:sysinfo \
+    "System" \
+    "Load\t$LOAD
+Mem\t$MEM
+Disk\t$DISK
+Bat\t${BAT}% · ${BAT_STATUS}
+Up\t$UPTIME"
+
+# Update with IP in background (non-blocking)
+{
+    IP=$(curl -s --max-time 3 ifconfig.me 2>/dev/null || echo "N/A")
+    notify-send -a sysinfo -t 12000 \
+        -h string:x-canonical-private-synchronous:sysinfo \
+        "System" \
+        "Load\t$LOAD
+Mem\t$MEM
+Disk\t$DISK
+Bat\t${BAT}% · ${BAT_STATUS}
+Up\t$UPTIME
+IP\t$IP"
+} &

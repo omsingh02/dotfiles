@@ -1,0 +1,154 @@
+#!/usr/bin/env bash
+# Author: Om Singh
+# wall-awww (Material 3 Edition): Apply wallpaper and update system colors via Material You (HCT)
+# Usage:
+#   wall-awww /path/to/image.jpg
+#   wall-awww /path/to/image.jpg --song
+#   wall-awww /path/to/image.jpg --restore
+#   wall-awww /path/to/image.jpg --light
+#   wall-awww /path/to/image.jpg --dark
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")" && pwd)"
+WALLPAPER="${1:-}"
+EXTRA_FLAG="${2:-}"
+
+if [[ -z "$WALLPAPER" || ! -f "$WALLPAPER" ]]; then
+    [[ "$EXTRA_FLAG" == "--restore" ]] && exit 0
+    echo "Usage: wall-awww /path/to/image.jpg [--song|--restore|--light|--dark]"
+    exit 1
+fi
+
+WALLPAPER="$(realpath "$WALLPAPER")"
+
+# Maintain canonical wallpaper symlink (LARBS ~/.local/share/bg pattern)
+mkdir -p "${XDG_DATA_HOME:-$HOME/.local/share}/wallpaper"
+ln -sf "$WALLPAPER" "${XDG_DATA_HOME:-$HOME/.local/share}/wallpaper/current"
+
+
+# Determine active mode BEFORE generating theme (prevents mode inversion)
+ACTIVE_MODE="dark"
+[[ -f ~/.cache/theme_mode ]] && ACTIVE_MODE=$(cat ~/.cache/theme_mode | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
+
+if [[ "$EXTRA_FLAG" == "--light" ]]; then
+    ACTIVE_MODE="light"
+elif [[ "$EXTRA_FLAG" == "--dark" ]]; then
+    ACTIVE_MODE="dark"
+fi
+
+MATYOU_ARGS=("--mode" "$ACTIVE_MODE")
+
+# 1. Generate color palette via theme-gen
+if ! "$SCRIPT_DIR/theme-gen" "$WALLPAPER" "${MATYOU_ARGS[@]}" 2>/dev/null; then
+    echo "[$(date +'%H:%M:%S')] wall-awww: WARNING: theme-gen failed for $WALLPAPER" >&2
+fi
+
+# 2. Set wallpaper via awww with transition based on mode
+transitions=("fade" "wipe")
+if [[ "$EXTRA_FLAG" == "--song" ]]; then
+    transitions+=("grow")
+fi
+
+rand=$((RANDOM % ${#transitions[@]}))
+trans="${transitions[$rand]}"
+
+case "$trans" in
+    fade)
+        awww img "$WALLPAPER" --transition-type fade --transition-duration 2 >/dev/null 2>&1
+        ;;
+    wipe)
+        awww img "$WALLPAPER" --transition-type wipe --transition-angle 30 --transition-step 90 --transition-duration 1 >/dev/null 2>&1
+        ;;
+    grow)
+        awww img "$WALLPAPER" --transition-type grow --transition-pos 0.08,0.90 --transition-duration 1.5 >/dev/null 2>&1
+        ;;
+esac
+
+# 3. Dynamic border updates in Hyprland
+if [[ -f ~/.cache/theme/colors-hyprland.conf ]]; then
+    primary=$(grep "^\$primary =" ~/.cache/theme/colors-hyprland.conf | cut -d' ' -f3-) || true
+    secondary=$(grep "^\$secondary =" ~/.cache/theme/colors-hyprland.conf | cut -d' ' -f3-) || true
+    bg=$(grep "^\$background =" ~/.cache/theme/colors-hyprland.conf | cut -d' ' -f3-) || true
+    
+    [[ -z "$primary" ]] && primary=$(grep "^\$color2 =" ~/.cache/theme/colors-hyprland.conf | cut -d' ' -f3-) || true
+    [[ -z "$secondary" ]] && secondary=$(grep "^\$color4 =" ~/.cache/theme/colors-hyprland.conf | cut -d' ' -f3-) || true
+    
+    if [[ -n "$primary" && -n "$secondary" ]]; then
+        hyprctl keyword general:col.active_border "$primary $secondary 45deg" 2>/dev/null || true
+    fi
+    if [[ -n "$bg" ]]; then
+        hyprctl keyword general:col.inactive_border "$bg" 2>/dev/null || true
+    fi
+fi
+
+# 4. Waybar auto-reload via SIGUSR2
+killall -SIGUSR2 waybar 2>/dev/null || true
+
+# 5. Rebuild mako config
+if [[ -f ~/.config/mako/config.base && -f ~/.cache/theme/colors-mako ]]; then
+    awk '/# THEME_COLORS_PLACEHOLDER/ { system("cat ~/.cache/theme/colors-mako"); next } { print }' \
+        ~/.config/mako/config.base > ~/.config/mako/config
+    makoctl reload 2>/dev/null || setsid mako >/dev/null 2>&1 &
+fi
+
+# 6. Rebuild foot config (inject initial-color-theme into [main], append [colors-dark] & [colors-light])
+if [[ -f ~/.config/foot/foot.ini.base && -f ~/.cache/theme/colors-foot.ini ]]; then
+    awk -v mode="$ACTIVE_MODE" '
+        /^\[main\]/ { print; print "initial-color-theme=" mode; next }
+        /^\[colors/ { exit }
+        { print }
+    ' ~/.config/foot/foot.ini.base > ~/.config/foot/foot.ini
+    cat ~/.cache/theme/colors-foot.ini >> ~/.config/foot/foot.ini
+
+    # Broadcast OSC escape sequences to active terminals
+    if [[ -f ~/.cache/theme/sequences ]]; then
+        for pt in /dev/pts/[0-9]*; do
+            [[ -w "$pt" ]] && cat ~/.cache/theme/sequences > "$pt" 2>/dev/null || true
+        done
+    fi
+
+    # Switch theme on all running foot instances (SIGUSR2=light, SIGUSR1=dark)
+    if [[ "$ACTIVE_MODE" == "light" ]]; then
+        killall -SIGUSR2 foot 2>/dev/null || true
+    else
+        killall -SIGUSR1 foot 2>/dev/null || true
+    fi
+fi
+
+# 7. Update fuzzel colors (assembled cleanly from fuzzel.ini.base)
+if [[ -f ~/.config/fuzzel/fuzzel.ini.base && -f ~/.cache/theme/colors-fuzzel.ini ]]; then
+    cat ~/.config/fuzzel/fuzzel.ini.base > ~/.config/fuzzel/fuzzel.ini
+    cat ~/.cache/theme/colors-fuzzel.ini >> ~/.config/fuzzel/fuzzel.ini
+fi
+
+# 8. Update GTK 3/4 colors
+if [[ -f ~/.cache/theme/colors-gtk.css ]]; then
+    cp ~/.cache/theme/colors-gtk.css ~/.config/gtk-3.0/gtk.css 2>/dev/null || true
+    cp ~/.cache/theme/colors-gtk.css ~/.config/gtk-4.0/gtk.css 2>/dev/null || true
+fi
+
+# 9. Update Qt5/Qt6 colors
+if [[ -f ~/.cache/theme/colors-qt.colors ]]; then
+    mkdir -p ~/.config/qt5ct/colors ~/.config/qt6ct/colors
+    cp ~/.cache/theme/colors-qt.colors ~/.config/qt5ct/colors/theme.colors 2>/dev/null || true
+    cp ~/.cache/theme/colors-qt.colors ~/.config/qt5ct/colors/wallust.colors 2>/dev/null || true
+    cp ~/.cache/theme/colors-qt.colors ~/.config/qt6ct/colors/theme.colors 2>/dev/null || true
+    cp ~/.cache/theme/colors-qt.colors ~/.config/qt6ct/colors/wallust.colors 2>/dev/null || true
+fi
+
+# 10. Sync gsettings based on active theme mode
+if [[ "$ACTIVE_MODE" == "light" ]]; then
+    gsettings set org.gnome.desktop.interface gtk-theme 'Adwaita' 2>/dev/null || true
+    gsettings set org.gnome.desktop.interface color-scheme 'prefer-light' 2>/dev/null || true
+else
+    gsettings set org.gnome.desktop.interface gtk-theme 'Adwaita-dark' 2>/dev/null || true
+    gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark' 2>/dev/null || true
+fi
+
+# 11. Keep ~/.cache/wal in sync
+if [[ -f ~/.cache/theme/colors && -f ~/.cache/theme/colors.json ]]; then
+    mkdir -p ~/.cache/wal
+    cp -f ~/.cache/theme/colors ~/.cache/wal/colors 2>/dev/null || true
+    cp -f ~/.cache/theme/colors.json ~/.cache/wal/colors.json 2>/dev/null || true
+fi

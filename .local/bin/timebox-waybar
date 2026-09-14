@@ -2,7 +2,9 @@
 # Author: Om Singh
 # Waybar JSON output for timebox-ctl status
 
-STATE_FILE="/tmp/timebox_end"
+STATE_DIR="${XDG_RUNTIME_DIR:-/tmp/user-$(id -u)}"
+STATE_FILE="$STATE_DIR/timebox_end"
+[[ ! -f "$STATE_FILE" && -f "/tmp/timebox_end" ]] && STATE_FILE="/tmp/timebox_end"
 
 if [ -f "$STATE_FILE" ]; then
     end_time=$(cat "$STATE_FILE")

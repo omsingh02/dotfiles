@@ -1,0 +1,640 @@
+#!/usr/bin/env python3
+"""
+wall-matyou: Material You (HCT) Color Engine for Wallpaper Theming
+Extracts colors from wallpaper images using Material Design 3 algorithms,
+supporting Light/Dark modes, variants (tonalspot, expressive, vibrant, etc.),
+and generating templates for Hyprland, Waybar, Foot, Antigravity/VSCode, Mako, Fuzzel, GTK, and Qt.
+"""
+
+import argparse
+import glob
+import json
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+
+# Material You color generator (vendored locally for 100% portability)
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+try:
+    from material.score import score
+    from material.generator import gen_scheme
+except ImportError:
+    try:
+        from caelestia.utils.material.score import score
+        from caelestia.utils.material.generator import gen_scheme
+    except ImportError:
+        score = None
+        gen_scheme = None
+
+def hex_to_ansi(hex_color: str, code: int, index: int | None = None) -> str:
+    color = hex_color.lstrip("#")
+    r, g, b = int(color[0:2], 16), int(color[2:4], 16), int(color[4:6], 16)
+    if index is not None:
+        return f"\033]{code};{index};rgb:{r:02x}/{g:02x}/{b:02x}\033\\"
+    return f"\033]{code};rgb:{r:02x}/{g:02x}/{b:02x}\033\\"
+
+def gen_sequences(colours: dict) -> str:
+    seq = (
+        hex_to_ansi(colours.get("onSurface", "ffffff"), 10)
+        + hex_to_ansi(colours.get("surface", "000000"), 11)
+        + hex_to_ansi(colours.get("secondary", "888888"), 12)
+        + hex_to_ansi(colours.get("secondary", "888888"), 17)
+    )
+    for i in range(16):
+        k = f"term{i}" if f"term{i}" in colours else f"color{i}"
+        if k in colours:
+            seq += hex_to_ansi(colours[k], 4, i)
+    return seq
+
+STATE_DIR = Path.home() / ".cache"
+THEME_DIR = STATE_DIR / "theme"
+WAL_DIR = STATE_DIR / "wal"
+MODE_FILE = STATE_DIR / "theme_mode"
+VARIANT_FILE = STATE_DIR / "theme_variant"
+SAVED_STATIC_FILE = STATE_DIR / "wall_saved_static"
+TEMPLATES_DIR = Path.home() / ".config" / "theme" / "templates"
+ANTIGRAVITY_THEME_DIR = Path.home() / ".antigravity-ide" / "extensions" / "saatvik333.wallust-theme-1.1.1"
+
+
+def get_current_mode() -> str:
+    if MODE_FILE.is_file():
+        m = MODE_FILE.read_text().strip().lower()
+        if m in ("dark", "light"):
+            return m
+    return "dark"
+
+
+def set_current_mode(mode: str) -> None:
+    MODE_FILE.write_text(f"{mode}\n")
+
+
+def get_current_variant() -> str:
+    if VARIANT_FILE.is_file():
+        v = VARIANT_FILE.read_text().strip().lower()
+        if v in ("tonalspot", "expressive", "vibrant", "fidelity", "fruitsalad", "monochrome", "neutral", "rainbow", "content"):
+            return v
+    return "tonalspot"
+
+
+def set_current_variant(variant: str) -> None:
+    VARIANT_FILE.write_text(f"{variant}\n")
+
+
+def hex_lighten(hex_str: str, amount: float) -> str:
+    """Lightens a hex color by the specified fraction (0.0 - 1.0)."""
+    hex_clean = hex_str.lstrip("#")
+    r = int(hex_clean[0:2], 16)
+    g = int(hex_clean[2:4], 16)
+    b = int(hex_clean[4:6], 16)
+    r = min(255, int(r + (255 - r) * amount))
+    g = min(255, int(g + (255 - g) * amount))
+    b = min(255, int(b + (255 - b) * amount))
+    return f"{r:02X}{g:02X}{b:02X}"
+
+
+def hex_darken(hex_str: str, amount: float) -> str:
+    """Darkens a hex color by the specified fraction (0.0 - 1.0)."""
+    hex_clean = hex_str.lstrip("#")
+    r = int(hex_clean[0:2], 16)
+    g = int(hex_clean[2:4], 16)
+    b = int(hex_clean[4:6], 16)
+    r = max(0, int(r * (1.0 - amount)))
+    g = max(0, int(g * (1.0 - amount)))
+    b = max(0, int(b * (1.0 - amount)))
+    return f"{r:02X}{g:02X}{b:02X}"
+
+
+def build_color_map(colours: dict[str, str], is_light: bool) -> dict[str, str]:
+    """
+    Builds a unified color mapping dictionary containing:
+    - Wallust standard tokens (background, foreground, cursor, color0-color15)
+    - Material 3 tokens (surface, onSurface, primary, secondary, error, etc.)
+    """
+    surface = colours.get("surface", "121416" if not is_light else "F8F9FD").upper()
+    on_surface = colours.get("onSurface", "E9ECEC" if not is_light else "191C1E").upper()
+    primary = colours.get("primary", "AACAE9" if not is_light else "376386").upper()
+    on_primary = colours.get("onPrimary", "12334F" if not is_light else "FFFFFF").upper()
+    primary_container = colours.get("primaryContainer", "2E4A6B" if not is_light else "D1E4FF").upper()
+    on_primary_container = colours.get("onPrimaryContainer", "D1E4FF" if not is_light else "001D36").upper()
+    secondary = colours.get("secondary", "BDC7D5" if not is_light else "526070").upper()
+    on_secondary = colours.get("onSecondary", "27313C" if not is_light else "FFFFFF").upper()
+    secondary_container = colours.get("secondaryContainer", "3D4753" if not is_light else "D6E4F7").upper()
+    on_secondary_container = colours.get("onSecondaryContainer", "D6E4F7" if not is_light else "0F1D2A").upper()
+    tertiary = colours.get("tertiary", "D4BFE6" if not is_light else "6B5778").upper()
+    surface_container = colours.get("surfaceContainer", "1C1F23" if not is_light else "EDEEF2").upper()
+    surface_container_high = colours.get("surfaceContainerHigh", "27292E" if not is_light else "E7E8EC").upper()
+    surface_container_low = colours.get("surfaceContainerLow", "17191C" if not is_light else "F3F3F7").upper()
+    surface_variant = colours.get("surfaceVariant", "42474E" if not is_light else "DEE3EB").upper()
+    on_surface_variant = colours.get("onSurfaceVariant", "C2C7CF" if not is_light else "42474E").upper()
+    outline = colours.get("outline", "8C9199" if not is_light else "73777F").upper()
+    outline_variant = colours.get("outlineVariant", "42474E" if not is_light else "C2C7CF").upper()
+    error = colours.get("error", "FFB4AB" if not is_light else "BA1A1A").upper()
+    on_error = colours.get("onError", "690005" if not is_light else "FFFFFF").upper()
+
+    mapping = {
+        "background": surface,
+        "foreground": on_surface,
+        "cursor": primary,
+        "surface": surface,
+        "onSurface": on_surface,
+        "primary": primary,
+        "onPrimary": on_primary,
+        "primaryContainer": primary_container,
+        "onPrimaryContainer": on_primary_container,
+        "secondary": secondary,
+        "onSecondary": on_secondary,
+        "secondaryContainer": secondary_container,
+        "onSecondaryContainer": on_secondary_container,
+        "tertiary": tertiary,
+        "surfaceContainer": surface_container,
+        "surfaceContainerHigh": surface_container_high,
+        "surfaceContainerLow": surface_container_low,
+        "surfaceVariant": surface_variant,
+        "onSurfaceVariant": on_surface_variant,
+        "outline": outline,
+        "outlineVariant": outline_variant,
+        "error": error,
+        "onError": on_error,
+    }
+
+    for i in range(16):
+        term_key = f"term{i}"
+        val = colours.get(term_key)
+        if not val:
+            val = surface if i == 0 else (on_surface if i == 15 else primary)
+        mapping[f"color{i}"] = val.upper()
+
+    return mapping
+
+
+def render_template_string(template_text: str, cmap: dict[str, str]) -> str:
+    def replacer(match):
+        expr = match.group(1).strip()
+        parts = [p.strip() for p in expr.split("|")]
+        var_name = parts[0]
+        val = cmap.get(var_name, "FFFFFF")
+
+        strip_hash = False
+        for filter_part in parts[1:]:
+            filter_part = filter_part.strip()
+            if filter_part == "strip":
+                strip_hash = True
+            elif filter_part.startswith("lighten(") and filter_part.endswith(")"):
+                try:
+                    amt = float(filter_part[8:-1])
+                    val = hex_lighten(val, amt)
+                except ValueError:
+                    pass
+            elif filter_part.startswith("darken(") and filter_part.endswith(")"):
+                try:
+                    amt = float(filter_part[7:-1])
+                    val = hex_darken(val, amt)
+                except ValueError:
+                    pass
+
+        val_clean = val.lstrip("#")
+        return val_clean if strip_hash else f"#{val_clean}"
+
+    pattern = re.compile(r"\{\{([^}]+)\}\}")
+    return pattern.sub(replacer, template_text)
+
+
+def sync_antigravity_theme(out_dir: Path) -> None:
+    """Directly compiles and writes the active theme into Antigravity IDE extension for instant live update."""
+    if not ANTIGRAVITY_THEME_DIR.is_dir():
+        return
+    node_script = f"""
+const Color = require('{ANTIGRAVITY_THEME_DIR}/node_modules/color');
+const template = require('{ANTIGRAVITY_THEME_DIR}/out/template').default;
+const fs = require('fs');
+const path = require('path');
+
+try {{
+    const themesDir = '{ANTIGRAVITY_THEME_DIR}/themes';
+    const colorsData = fs.readFileSync('{out_dir}/colors', 'utf-8');
+    const colorStrings = colorsData.trim().split(/\\s+/).filter(s => s.length > 0).map(c => c.startsWith('#') ? c : '#' + c);
+    const colors = colorStrings.map(c => Color(c));
+
+    if (fs.existsSync('{out_dir}/colors.json')) {{
+        try {{
+            const jsonColors = JSON.parse(fs.readFileSync('{out_dir}/colors.json', 'utf-8'));
+            if (jsonColors.special?.background) colors[0] = Color(jsonColors.special.background);
+            if (jsonColors.special?.foreground) colors[7] = Color(jsonColors.special.foreground);
+        }} catch (e) {{}}
+    }}
+
+    const themeNormal = template(colors, false);
+    const themeBordered = template(colors, true);
+
+    fs.writeFileSync(path.join(themesDir, 'wallust.json'), JSON.stringify(themeNormal, null, 4));
+    fs.writeFileSync(path.join(themesDir, 'wallust-bordered.json'), JSON.stringify(themeBordered, null, 4));
+}} catch (err) {{
+    // non-fatal
+}}
+"""
+    try:
+        subprocess.run(["node", "-e", node_script], check=False, timeout=3)
+    except Exception:
+        pass
+
+
+def generate_all_files(colours: dict[str, str], dark_colours: dict[str, str], light_colours: dict[str, str], is_light: bool, out_dir: Path) -> None:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    WAL_DIR.mkdir(parents=True, exist_ok=True)
+
+    cmap = build_color_map(colours, is_light)
+    dark_cmap = build_color_map(dark_colours, False)
+    light_cmap = build_color_map(light_colours, True)
+
+    # 1. colors-hyprland.conf
+    hypr_conf = [
+        f"$background = rgb({cmap['background']})",
+        f"$foreground = rgb({cmap['foreground']})",
+        f"$cursor = rgb({cmap['cursor']})",
+    ]
+    for i in range(16):
+        hypr_conf.append(f"$color{i} = rgb({cmap[f'color{i}']})")
+    hypr_conf.extend([
+        f"$primary = rgb({cmap['primary']})",
+        f"$on_primary = rgb({cmap['onPrimary']})",
+        f"$primary_container = rgb({cmap['primaryContainer']})",
+        f"$secondary = rgb({cmap['secondary']})",
+        f"$tertiary = rgb({cmap['tertiary']})",
+        f"$surface = rgb({cmap['surface']})",
+        f"$on_surface = rgb({cmap['onSurface']})",
+        f"$surface_container = rgb({cmap['surfaceContainer']})",
+        f"$outline = rgb({cmap['outline']})",
+        f"$error = rgb({cmap['error']})",
+    ])
+    (out_dir / "colors-hyprland.conf").write_text("\n".join(hypr_conf) + "\n")
+
+    # 2. colors-waybar.css
+    wb_css = [
+        f"@define-color background #{cmap['background']};",
+        f"@define-color foreground #{cmap['foreground']};",
+        f"@define-color cursor #{cmap['cursor']};",
+    ]
+    for i in range(16):
+        wb_css.append(f"@define-color color{i} #{cmap[f'color{i}']};")
+    wb_css.extend([
+        f"@define-color primary #{cmap['primary']};",
+        f"@define-color on_primary #{cmap['onPrimary']};",
+        f"@define-color primary_container #{cmap['primaryContainer']};",
+        f"@define-color on_primary_container #{cmap['onPrimaryContainer']};",
+        f"@define-color secondary #{cmap['secondary']};",
+        f"@define-color on_secondary #{cmap['onSecondary']};",
+        f"@define-color secondary_container #{cmap['secondaryContainer']};",
+        f"@define-color surface #{cmap['surface']};",
+        f"@define-color on_surface #{cmap['onSurface']};",
+        f"@define-color surface_container #{cmap['surfaceContainer']};",
+        f"@define-color surface_container_high #{cmap['surfaceContainerHigh']};",
+        f"@define-color surface_variant #{cmap['surfaceVariant']};",
+        f"@define-color on_surface_variant #{cmap['onSurfaceVariant']};",
+        f"@define-color outline #{cmap['outline']};",
+        f"@define-color error #{cmap['error']};",
+    ])
+    (out_dir / "colors-waybar.css").write_text("\n".join(wb_css) + "\n")
+
+    # 3. colors-foot.ini (Defines ONLY [colors-dark] and [colors-light] sections without injecting into main)
+    foot_lines = [
+        "[colors-dark]",
+        "alpha=0.8",
+        "blur=yes",
+        f"background={dark_cmap['background']}",
+        f"foreground={dark_cmap['foreground']}",
+    ]
+    for i in range(8):
+        foot_lines.append(f"regular{i}={dark_cmap[f'color{i}']}")
+    for i in range(8):
+        foot_lines.append(f"bright{i}={dark_cmap[f'color{i+8}']}")
+    foot_lines.extend([
+        f"selection-foreground={dark_cmap['onPrimaryContainer']}",
+        f"selection-background={dark_cmap['primaryContainer']}",
+        "",
+        "[colors-light]",
+        "alpha=0.8",
+        "blur=yes",
+        f"background={light_cmap['background']}",
+        f"foreground={light_cmap['foreground']}",
+    ])
+    for i in range(8):
+        foot_lines.append(f"regular{i}={light_cmap[f'color{i}']}")
+    for i in range(8):
+        foot_lines.append(f"bright{i}={light_cmap[f'color{i+8}']}")
+    foot_lines.extend([
+        f"selection-foreground={light_cmap['onPrimaryContainer']}",
+        f"selection-background={light_cmap['primaryContainer']}",
+        "",
+    ])
+    (out_dir / "colors-foot.ini").write_text("\n".join(foot_lines) + "\n")
+
+    # 4. colors-mako (global colors only — urgency overrides in config.base)
+    mako_lines = [
+        f"background-color=#{cmap['background']}",
+        f"text-color=#{cmap['foreground']}",
+        f"border-color=#{cmap['primary']}",
+        f"progress-color=over #{cmap['primary']}",
+        "",
+        "[urgency=high]",
+        f"border-color=#{cmap['error']}",
+        "",
+        "[urgency=low]",
+        f"border-color=#{cmap['surfaceContainer']}",
+        "",
+    ]
+    (out_dir / "colors-mako").write_text("\n".join(mako_lines))
+
+    # 5. colors-fuzzel.ini
+    fuzzel_lines = [
+        "[colors]",
+        f"background={cmap['background']}ff",
+        f"text={cmap['foreground']}ff",
+        f"match={cmap['primary']}ff",
+        f"selection={cmap['primary']}ff",
+        f"selection-text={cmap['onPrimary']}ff",
+        f"border={cmap['primary']}ff",
+        "",
+    ]
+    (out_dir / "colors-fuzzel.ini").write_text("\n".join(fuzzel_lines))
+
+    # 6. colors-gtk.css
+    gtk_css = f"""/* === Material 3 Dynamic GTK Themes === */
+@define-color accent_color #{cmap['primary']};
+@define-color accent_fg_color #{cmap['onPrimary']};
+@define-color accent_bg_color #{cmap['primary']};
+@define-color window_bg_color #{cmap['background']};
+@define-color window_fg_color #{cmap['foreground']};
+@define-color headerbar_bg_color #{cmap['surfaceContainer']};
+@define-color headerbar_fg_color #{cmap['foreground']};
+@define-color popover_bg_color #{cmap['surfaceContainerHigh']};
+@define-color popover_fg_color #{cmap['foreground']};
+@define-color view_bg_color #{cmap['background']};
+@define-color view_fg_color #{cmap['foreground']};
+@define-color card_bg_color #{cmap['surfaceContainer']};
+@define-color card_fg_color #{cmap['foreground']};
+@define-color sidebar_bg_color @window_bg_color;
+@define-color sidebar_fg_color @window_fg_color;
+@define-color sidebar_border_color @window_bg_color;
+@define-color sidebar_backdrop_color @window_bg_color;
+
+/* === GTK3 Adwaita named colors === */
+@define-color theme_bg_color #{cmap['background']};
+@define-color theme_fg_color #{cmap['foreground']};
+@define-color theme_base_color #{cmap['surfaceContainerLow']};
+@define-color theme_text_color #{cmap['foreground']};
+@define-color theme_selected_bg_color #{cmap['primary']};
+@define-color theme_selected_fg_color #{cmap['onPrimary']};
+@define-color insensitive_bg_color #{cmap['surfaceContainer']};
+@define-color insensitive_fg_color #{cmap['outline']};
+@define-color borders alpha(#{cmap['foreground']}, 0.15);
+@define-color unfocused_borders alpha(#{cmap['foreground']}, 0.1);
+
+window, .background, dialog {{
+    background-color: @theme_bg_color;
+    color: @theme_fg_color;
+}}
+
+treeview.view, textview, textview text,
+iconview, .view, list, listbox, flowbox {{
+    background-color: @theme_base_color;
+    color: @theme_text_color;
+}}
+
+treeview.view header button {{
+    background-color: @theme_bg_color;
+    color: @theme_fg_color;
+    border-color: @borders;
+}}
+
+entry, .entry, searchbar > revealer > box, searchbar entry, spinbutton {{
+    background-color: @theme_base_color;
+    color: @theme_text_color;
+    border-color: @borders;
+}}
+"""
+    (out_dir / "colors-gtk.css").write_text(gtk_css)
+
+    # 7. colors-qt.colors
+    qt_template = TEMPLATES_DIR / "colors-qt.colors"
+    if qt_template.is_file():
+        rendered_qt = render_template_string(qt_template.read_text(), cmap)
+        (out_dir / "colors-qt.colors").write_text(rendered_qt)
+
+    # 8. colors & colors.json (Pywal & VS Code / Antigravity IDE)
+    # IMPORTANT: Include '#' prefix for Color() parser compatibility in VS Code/Antigravity extensions!
+    colors_plain = "\n".join([f"#{cmap[f'color{i}']}" for i in range(16)]) + "\n"
+    (out_dir / "colors").write_text(colors_plain)
+    (WAL_DIR / "colors").write_text(colors_plain)
+
+    colors_data = {
+        "alpha": "100",
+        "mode": "light" if is_light else "dark",
+        "special": {
+            "background": f"#{cmap['background']}",
+            "foreground": f"#{cmap['foreground']}",
+            "cursor": f"#{cmap['cursor']}",
+            "primary": f"#{cmap['primary']}",
+        },
+        "colors": {f"color{i}": f"#{cmap[f'color{i}']}" for i in range(16)},
+    }
+    json_text = json.dumps(colors_data, indent=2) + "\n"
+    (out_dir / "colors.json").write_text(json_text)
+    (WAL_DIR / "colors.json").write_text(json_text)
+
+    # 9. sequences (Terminal OSC broadcast sequences)
+    seq_str = gen_sequences(colours)
+    (out_dir / "sequences").write_text(seq_str)
+
+    # 10. colors-nvim.lua
+    nvim_lines = [
+        "-- Auto-generated by wall-matyou (Material 3) — do not edit manually",
+        "return {",
+        f'    background = "#{cmap["background"]}",',
+        f'    foreground = "#{cmap["foreground"]}",',
+        f'    cursor     = "#{cmap["cursor"]}",',
+        f'    primary    = "#{cmap["primary"]}",',
+    ]
+    for i in range(16):
+        nvim_lines.append(f'    color{i:<6} = "#{cmap[f"color{i}"]}",')
+    nvim_lines.append("}\n")
+    (out_dir / "colors-nvim.lua").write_text("\n".join(nvim_lines))
+
+    # 11. colors-zathura
+    zathura_lines = [
+        f'set default-bg "#{cmap["background"]}"',
+        f'set default-fg "#{cmap["foreground"]}"',
+        f'set statusbar-bg "#{cmap["surfaceContainer"]}"',
+        f'set statusbar-fg "#{cmap["foreground"]}"',
+        f'set inputbar-bg "#{cmap["background"]}"',
+        f'set inputbar-fg "#{cmap["foreground"]}"',
+        f'set notification-bg "#{cmap["surfaceContainer"]}"',
+        f'set notification-fg "#{cmap["foreground"]}"',
+        f'set notification-error-bg "#{cmap["error"]}"',
+        f'set notification-error-fg "#{cmap["onError"]}"',
+        f'set highlight-color "#{cmap["primaryContainer"]}"',
+        f'set highlight-active-color "#{cmap["primary"]}"',
+        f'set completion-bg "#{cmap["surfaceContainer"]}"',
+        f'set completion-fg "#{cmap["foreground"]}"',
+        f'set completion-highlight-bg "#{cmap["primary"]}"',
+        "",
+    ]
+    (out_dir / "colors-zathura").write_text("\n".join(zathura_lines))
+
+    # 12. starship.toml
+    starship_template = TEMPLATES_DIR / "starship.toml"
+    if starship_template.is_file():
+        rendered_starship = render_template_string(starship_template.read_text(), cmap)
+        try:
+            (out_dir / "starship.toml").write_text(rendered_starship)
+            # Maintain backward compatibility if no STARSHIP_CONFIG is used
+            (Path.home() / ".config" / "starship.toml").write_text(rendered_starship)
+        except Exception:
+            pass
+
+    # 13. btop theme
+    btop_theme = f"""# Main background
+theme[main_bg]="#{cmap['background']}"
+theme[main_fg]="#{cmap['foreground']}"
+theme[title]="#{cmap['foreground']}"
+theme[hi_fg]="#{cmap['primary']}"
+theme[selected_bg]="#{cmap['primaryContainer']}"
+theme[selected_fg]="#{cmap['onPrimaryContainer']}"
+theme[inactive_fg]="#{cmap['outline']}"
+theme[graph_text]="#{cmap['color7']}"
+theme[proc_misc]="#{cmap['tertiary']}"
+theme[cpu_box]="#{cmap['primary']}"
+theme[mem_box]="#{cmap['secondary']}"
+theme[net_box]="#{cmap['color4']}"
+theme[proc_box]="#{cmap['primary']}"
+theme[div_line]="#{cmap['surfaceContainerHigh']}"
+theme[temp_start]="#{cmap['color2']}"
+theme[temp_mid]="#{cmap['color3']}"
+theme[temp_end]="#{cmap['error']}"
+theme[cpu_start]="#{cmap['color2']}"
+theme[cpu_mid]="#{cmap['color3']}"
+theme[cpu_end]="#{cmap['error']}"
+theme[free_start]="#{cmap['color2']}"
+theme[free_mid]="#{cmap['color3']}"
+theme[free_end]="#{cmap['error']}"
+theme[cached_start]="#{cmap['color2']}"
+theme[cached_mid]="#{cmap['color3']}"
+theme[cached_end]="#{cmap['error']}"
+theme[available_start]="#{cmap['color2']}"
+theme[available_mid]="#{cmap['color3']}"
+theme[available_end]="#{cmap['error']}"
+theme[used_start]="#{cmap['color2']}"
+theme[used_mid]="#{cmap['color3']}"
+theme[used_end]="#{cmap['error']}"
+theme[download_start]="#{cmap['color2']}"
+theme[download_mid]="#{cmap['color3']}"
+theme[download_end]="#{cmap['color4']}"
+theme[upload_start]="#{cmap['color2']}"
+theme[upload_mid]="#{cmap['color3']}"
+theme[upload_end]="#{cmap['color4']}"
+"""
+    btop_dir = Path.home() / ".config" / "btop" / "themes"
+    btop_dir.mkdir(parents=True, exist_ok=True)
+    (btop_dir / "theme.theme").write_text(btop_theme)
+    (btop_dir / "wallust.theme").write_text(btop_theme)
+
+    # 14. Synchronize Antigravity IDE themes atomically
+    sync_antigravity_theme(out_dir)
+
+
+def broadcast_sequences(sequences_file: Path) -> None:
+    """Broadcasts ANSI escape sequences to all active /dev/pts/* terminals."""
+    if not sequences_file.is_file():
+        return
+    seq_bytes = sequences_file.read_bytes()
+    for pt in glob.glob("/dev/pts/[0-9]*"):
+        try:
+            if os.access(pt, os.W_OK):
+                with open(pt, "wb", buffering=0) as f:
+                    f.write(seq_bytes)
+        except Exception:
+            pass
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Material You (HCT) Theming Engine")
+    parser.add_argument("wallpaper", nargs="?", help="Path to wallpaper image")
+    parser.add_argument("--mode", choices=["dark", "light", "toggle"], help="Color scheme mode (dark/light/toggle)")
+    parser.add_argument("--variant", default=None, help="Scheme variant (tonalspot, expressive, vibrant, fidelity, fruitsalad, monochrome, neutral)")
+    parser.add_argument("--flavour", default="default", choices=["default", "hard"], help="Surface flavour")
+    parser.add_argument("--output-dir", default=str(THEME_DIR), help="Output directory for generated cache files")
+    parser.add_argument("--dry-run", action="store_true", help="Print colors as JSON without writing files")
+    parser.add_argument("--broadcast-only", action="store_true", help="Only broadcast OSC sequences to /dev/pts/*")
+
+    args = parser.parse_args()
+
+    out_dir = Path(args.output_dir)
+
+    if args.broadcast_only:
+        broadcast_sequences(out_dir / "sequences")
+        return
+
+    # Determine mode
+    current_mode = get_current_mode()
+    if args.mode == "toggle":
+        target_mode = "light" if current_mode == "dark" else "dark"
+        set_current_mode(target_mode)
+    elif args.mode:
+        target_mode = args.mode
+        set_current_mode(target_mode)
+    else:
+        target_mode = current_mode
+
+    # Determine variant
+    current_variant = get_current_variant()
+    if args.variant:
+        target_variant = args.variant.lower()
+        set_current_variant(target_variant)
+    else:
+        target_variant = current_variant
+
+    # Resolve wallpaper path
+    wallpaper_path = args.wallpaper
+    if not wallpaper_path:
+        if SAVED_STATIC_FILE.is_file():
+            saved = SAVED_STATIC_FILE.read_text().strip()
+            if os.path.isfile(saved):
+                wallpaper_path = saved
+
+    if not wallpaper_path or not os.path.isfile(wallpaper_path):
+        print("Error: No valid wallpaper specified or found in cache.", file=sys.stderr)
+        sys.exit(1)
+
+    # 1. Score wallpaper to find primary HCT
+    try:
+        primary_hct = score(wallpaper_path)
+    except Exception as e:
+        print(f"Error scoring wallpaper: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    # 2. Generate Material Schemes (Both Dark and Light for complete desktop sync)
+    scheme_dark = SimpleNamespace(mode="dark", variant=target_variant, flavour=args.flavour)
+    scheme_light = SimpleNamespace(mode="light", variant=target_variant, flavour=args.flavour)
+    dark_colours = gen_scheme(scheme_dark, primary_hct)
+    light_colours = gen_scheme(scheme_light, primary_hct)
+
+    active_colours = light_colours if target_mode == "light" else dark_colours
+
+    if args.dry_run:
+        cmap = build_color_map(active_colours, target_mode == "light")
+        print(json.dumps({"mode": target_mode, "variant": target_variant, "colors": cmap}, indent=2))
+        return
+
+    # 3. Generate all cache templates
+    generate_all_files(active_colours, dark_colours, light_colours, target_mode == "light", out_dir)
+
+    # 4. Broadcast OSC sequences to open terminals
+    broadcast_sequences(out_dir / "sequences")
+
+    print(f"Generated Material You ({target_mode.upper()} / {target_variant}) palette from {os.path.basename(wallpaper_path)}")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,5 +1,5 @@
-/* Import wallust colors */
-@import "../../.cache/wallust/colors-waybar.css";
+/* Theme Colors */
+@import "../../.cache/theme/colors-waybar.css";
 
 * {
     font-family: "JetBrainsMono Nerd Font", monospace;
@@ -70,6 +70,11 @@ window#waybar {
     box-shadow: none;
 }
 
+/* DND active state */
+#custom-dnd.dnd-on {
+    color: alpha(@foreground, 0.4);
+}
+
 /* Workspaces bubble gets a bit tighter padding so the buttons fit perfectly */
 #workspaces {
     padding: 2px 4px;
@@ -138,6 +143,14 @@ window#waybar {
 /* Warnings and Critical States */
 #battery.charging {
     color: @color2;
+}
+
+#battery.plugged {
+    color: @color4;
+}
+
+#battery.warning:not(.charging) {
+    color: @color3;
 }
 
 #battery.critical:not(.charging) {

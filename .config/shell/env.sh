@@ -29,11 +29,13 @@ export NODE_REPL_HISTORY="$XDG_DATA_HOME/node_repl_history"
 export IPYTHONDIR="$XDG_CONFIG_HOME/ipython"
 export JUPYTER_CONFIG_DIR="$XDG_CONFIG_HOME/jupyter"
 
-# PATH
-export PATH="$HOME/.local/bin:$HOME/.local/bin/wallpaper-scripts:$PATH"
+# PATH — includes ~/.local/bin and any direct tool subdirectories (LARBS pattern)
+_local_subdirs="$(find "$HOME/.local/bin" -mindepth 1 -maxdepth 2 -type d 2>/dev/null | paste -sd ':' -)"
+export PATH="$HOME/.local/bin${_local_subdirs:+:$_local_subdirs}:$PATH"
+unset _local_subdirs
 [ -d "$CARGO_HOME/bin" ] && export PATH="$CARGO_HOME/bin:$PATH"
-export PATH="$HOME/.npm-global/bin:$PATH"
-export PATH="$HOME/go/bin:$PATH"
+[ -d "$HOME/.npm-global/bin" ] && export PATH="$HOME/.npm-global/bin:$PATH"
+[ -d "$HOME/go/bin" ] && export PATH="$HOME/go/bin:$PATH"
 
 # pnpm
 export PNPM_HOME="$XDG_DATA_HOME/pnpm"

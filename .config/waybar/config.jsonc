@@ -45,8 +45,8 @@
         "format": "{}",
         "return-type": "json",
         "exec": "~/.local/bin/mediactl-status",
-        "exec-if": "playerctl -i Shazam status 2>/dev/null | grep -qE 'Playing|Paused'",
-        "interval": 3,
+        "exec-if": "test -s /tmp/waybar-media-json",
+        "interval": 5,
         "exec-on-event": false,
         "on-click": "~/.local/bin/mediactl toggle",
         "on-click-right": "~/.local/bin/smart-scratchpad spncmpcpp spncmp 'foot --app-id spncmpcpp -e ncmpcpp'",
@@ -73,9 +73,10 @@
     "custom/shazam": {
         "format": "{}",
         "return-type": "json",
-        "exec": "/home/faulter/.local/bin/musicRecognition/shazam-waybar.sh",
-        "restart-interval": 5,
-        "on-click": "/home/faulter/.local/bin/musicRecognition/shazam-waybar.sh toggle",
+        "exec": "~/.local/bin/musicRecognition/shazam-waybar.sh",
+        "interval": 5,
+        "signal": 10,
+        "on-click": "~/.local/bin/musicRecognition/shazam-waybar.sh toggle",
         "on-click-right": "foot --title 'Shazam History' sh -c 'bat \"$HOME/.local/share/shazam_history.txt\"; read -p \"Press enter to close...\"'",
         "tooltip": true
     },
@@ -101,7 +102,7 @@
         }
     },
     "tray": {
-        "icon-size": 14,
+        "icon-size": 18,
         "spacing": 8
     },
     "custom/updates": {
@@ -121,7 +122,7 @@
         "on-click": "foot -e bluetoothctl"
     },
     "network": {
-        "interval": 3,
+        "interval": 5,
         // Click to toggle between simple text and your actual IP address
         "format-alt": "IP: {ipaddr}",
         "format-wifi": "󰤨  {essid} ({signalStrength}%)",
@@ -159,14 +160,19 @@
         "on-click": "foot -e btop"
     },
     "battery": {
+        "signal": 8,
         "states": {
             "warning": 30,
             "critical": 15
         },
-        "format": "󰁹 {capacity}%",
-        "format-charging": "󰂄 {capacity}%",
-        "format-plugged": "󰚥 {capacity}%",
+        "format": "{icon} {capacity}%",
+        "format-charging": "󱐋 {icon} {capacity}%",
+        "format-plugged": "󰚥 {icon} {capacity}%",
         "format-full": "󰂅 {capacity}%",
+        "format-warning": "{icon} {capacity}%",
+        "format-critical": "󰂃 {capacity}%",
+        "format-alt": "{icon} {capacity}% · {health}%",
+        "format-time": "{H}h {M}m",
         "format-icons": [
             "󰂎",
             "󰁺",
@@ -180,7 +186,13 @@
             "󰂂",
             "󰁹"
         ],
-        "tooltip-format": "<span size='12000' weight='bold'>Battery: {capacity}%</span>\n<span color='#cccccc'>Health: {health}% | Draw: {power}W</span>\n<span size='10000' color='#999999'><i>{timeTo} remaining</i></span>"
+        "tooltip-format-discharging": "{power:.0f} W · {timeTo}",
+        "tooltip-format-charging": "+{power:.0f} W · {timeTo}",
+        "tooltip-format-plugged": "Threshold — on AC",
+        "tooltip-format-full": "Full — on AC",
+        "tooltip-format-warning": "<span color='#ffaa00'>{power:.0f} W · {timeTo}</span>",
+        "tooltip-format-critical": "<span color='#ff5555'>{power:.0f} W · {timeTo}</span>",
+        "tooltip-format": "{capacity}%"
     },
     "wireplumber": {
         "format": "󰕾 {volume}%",
@@ -209,12 +221,5 @@
             "on-scroll-up": "shift_up",
             "on-scroll-down": "shift_down"
         }
-    },
-    "custom/timer": {
-        "exec": "/home/faulter/.local/bin/timebox-waybar",
-        "return-type": "json",
-        "restart-interval": 1,
-        "on-click": "/home/faulter/.local/bin/timebox-ctl",
-        "signal": 8
     }
 }

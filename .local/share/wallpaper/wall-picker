@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+# Author: Om Singh
+# wall-picker (Material 3 Edition): Fuzzel menu for selecting wallpapers and themes
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")" && pwd)"
+WALL_DIR="${WALLPAPER_DIR:-$HOME/pix/walls}"
+if [ ! -d "$WALL_DIR" ]; then
+    WALL_DIR="$(xdg-user-dir PICTURES 2>/dev/null || echo "$HOME/Pictures")/Wallpapers"
+fi
+CACHE_DIR="$HOME/.cache/wall-picker"
+mkdir -p "$CACHE_DIR"
+
+gen_preview() {
+    local file="$1"
+    local size="128x128"
+    local hash=$(echo -n "$file" | md5sum | awk '{print $1}')
+    local preview="$CACHE_DIR/${hash}.jpg"
+    
+    if [[ ! -f "$preview" ]]; then
+        if command -v magick &>/dev/null; then
+            magick "${file}[0]" -auto-orient -thumbnail "${size}^" -gravity center -extent "$size" "$preview" 2>/dev/null || return 1
+        elif command -v convert &>/dev/null; then
+            convert "${file}[0]" -auto-orient -thumbnail "${size}^" -gravity center -extent "$size" "$preview" 2>/dev/null || return 1
+        fi
+    fi
+    echo "$preview"
+}
+
+# Current mode indicator
+CUR_MODE="dark"
+[[ -f ~/.cache/theme_mode ]] && CUR_MODE="$(cat ~/.cache/theme_mode | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+MODE_ICON=""
+[[ "$CUR_MODE" == "light" ]] && MODE_ICON="󰖙"
+
+# 1. Main Menu
+menu_items=(
+    "  Static Wallpapers"
+    "$MODE_ICON  Toggle Mode (${CUR_MODE^})"
+    "󰏘  Theme Variant"
+    "󰚺  Live Shaders"
+    "󰕧  Video"
+    "  Download Wallpapers"
+    "󰸦  Toggle Song Mode"
+    "󰅙  Stop All"
+)
+
+choice=$(printf '%s\n' "${menu_items[@]}" | fuzzel --dmenu -l 8 -p "Wallpaper Mode: ")
+
+[[ -z "$choice" ]] && exit 0
+
+clean_choice=$(echo "$choice" | sed -E 's/^[^a-zA-Z]+//')
+
+case "$clean_choice" in
+    "Static Wallpapers")
+        target=$(fd -e jpg -e png -e jpeg -e webp -e gif . "$WALL_DIR/awww/" | while read -r file; do
+            name=$(basename "$file")
+            icon=$(gen_preview "$file" || builtin echo "image")
+            echo -e "$name\0icon\x1f$icon"
+        done | fuzzel --dmenu -l 10 -p "Select Image: ")
+        
+        [[ -n "$target" ]] && "$SCRIPT_DIR/wall-core" set awww "$WALL_DIR/awww/$target"
+        ;;
+        
+    "Toggle Mode"*)
+        "$SCRIPT_DIR/wall-core" toggle-mode
+        ;;
+
+    "Theme Variant")
+        variants=(
+            "tonalspot (Default Material 3)"
+            "expressive (High chroma & vivid accents)"
+            "vibrant (Maximum chroma)"
+            "fidelity (Faithful to source image)"
+            "fruitsalad (Playful multi-hue)"
+            "monochrome (Greyscale surfaces & accents)"
+            "neutral (Subdued low-saturation)"
+        )
+        v_choice=$(printf '%s\n' "${variants[@]}" | fuzzel --dmenu -l 7 -p "Select Variant: ")
+        if [[ -n "$v_choice" ]]; then
+            v_name=$(echo "$v_choice" | awk '{print $1}')
+            "$SCRIPT_DIR/wall-core" variant "$v_name"
+        fi
+        ;;
+
+    "Live Shaders")
+        target=$(fd -e glsl . "$HOME/.local/bin/livewall/shaders/" | while read -r file; do
+            name=$(basename "$file" .glsl)
+            echo -e "$name\0icon\x1fapplications-graphics"
+        done | fuzzel --dmenu -l 10 -p "Select Shader: ")
+        
+        [[ -n "$target" ]] && "$SCRIPT_DIR/wall-core" set livewall "${target}.glsl"
+        ;;
+        
+    "Video")
+        target=$(fd -e mp4 -e webm -e mkv . "$WALL_DIR/mpvpaper/" | while read -r file; do
+            name=$(basename "$file")
+            echo -e "$name\0icon\x1fvideo-x-generic"
+        done | fuzzel --dmenu -l 10 -p "Select Video: ")
+        
+        [[ -n "$target" ]] && "$SCRIPT_DIR/wall-core" set mpvpaper "$WALL_DIR/mpvpaper/$target"
+        ;;
+        
+    "Download Wallpapers")
+        "$SCRIPT_DIR/wall-dl" --menu
+        ;;
+
+    "Toggle Song Mode")
+        "$SCRIPT_DIR/wall-core" toggle-song
+        ;;
+        
+    "Stop All")
+        "$SCRIPT_DIR/wall-core" stop-all
+        ;;
+esac

@@ -10,5 +10,5 @@ PID=$(echo "$PICK" | awk '{print $1}')
 NAME=$(echo "$PICK" | awk '{print $2}')
 
 kill "$PID" 2>/dev/null && \
-    notify-send "Process Killed" "$NAME (PID $PID)" || \
-    notify-send -u critical "Kill Failed" "$NAME — try with sudo"
+    notify-send -a prockill "Process Killed" "$NAME · PID $PID" || \
+    notify-send -a prockill -u critical "Kill Failed" "$NAME — try with sudo"

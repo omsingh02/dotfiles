@@ -21,10 +21,10 @@ elif [ -n "$BASH_VERSION" ]; then
 fi
 
 # Pywal colors
-if [ -z "$TMUX" ] && [ -f ~/.cache/wallust/sequences ]; then
-    (cat ~/.cache/wallust/sequences &)
+if [ -z "$TMUX" ] && [ -f ~/.cache/theme/sequences ]; then
+    (cat ~/.cache/theme/sequences &)
 fi
-[ -f ~/.cache/wallust/colors.sh ] && source ~/.cache/wallust/colors.sh
+[ -f ~/.cache/theme/colors.sh ] && source ~/.cache/theme/colors.sh
 
 # Greeting
 pokemon-colorscripts -r

@@ -5,6 +5,97 @@
 
 NOTIFY_TAG="mediactl"
 COVER_DIR="$HOME/.cache/mpd/covers"
+STATE_DIR="${XDG_RUNTIME_DIR:-/tmp/user-$(id -u)}"
+mkdir -p "$STATE_DIR"
+WAYBAR_STATE="$STATE_DIR/waybar-media-json"
+WAYBAR_INTERP="$STATE_DIR/waybar-media-interp"
+
+# Ignore non-playback MPRIS services (Shazam audio recognition and playerctld proxy)
+playerctl() {
+    command playerctl -i Shazam,playerctld "$@"
+}
+
+# --- Quick Waybar state refresh ---
+# Reads the interpolation cache and regenerates the state file with current
+# status/position. This runs after toggle/seek/stop to give Waybar instant
+# feedback without waiting for wall-daemon's metadata event.
+_quick_update_waybar() {
+    local interp_data
+    interp_data=$(cat "$WAYBAR_INTERP" 2>/dev/null) || return 0
+    IFS='|' read -r _s _title _artist _album _dur _pos _epoch _accent <<< "$interp_data"
+
+    [[ -z "$_title" ]] && return 0
+
+    # Get fresh status and position from playerctl
+    local fresh
+    fresh=$(playerctl metadata --format '{{status}}|{{mpris:length}}|{{position}}' 2>/dev/null) || return 0
+    IFS='|' read -r new_status new_dur new_pos <<< "$fresh"
+    new_pos="${new_pos%.*}"
+    new_pos="${new_pos:-0}"
+    new_dur="${new_dur:-$_dur}"
+
+    # Update the interpolation file for the position updater
+    local new_epoch
+    new_epoch=$(date +%s)
+    printf '%s|%s|%s|%s|%s|%s|%s|%s\n' \
+        "$new_status" "$_title" "$_artist" "$_album" \
+        "$new_dur" "$new_pos" "$new_epoch" "$_accent" \
+        > "$WAYBAR_INTERP"
+
+    # Inline the Waybar JSON generation (minimal subset)
+    [[ -z "$_artist" ]] && _artist="Unknown Artist"
+    [[ -z "$_album" ]] && _album="Unknown Album"
+
+    local display_raw="$_title — $_artist"
+    local max_len=30
+    if [[ ${#display_raw} -gt $((max_len - 2)) ]]; then
+        local truncated="${display_raw:0:$((max_len - 2))}"
+        [[ "$truncated" == *" "* ]] && display_raw="${truncated% *}" || display_raw="$truncated"
+        display_raw=$(echo "$display_raw" | sed 's/[,;-]*$//;s/[[:space:]]*$//')
+    fi
+
+    # Pango-escape
+    local e_display="${display_raw//&/&amp;}"
+    e_display="${e_display//</&lt;}"
+    e_display="${e_display//>/&gt;}"
+    local e_title="${_title//&/&amp;}"; e_title="${e_title//</&lt;}"; e_title="${e_title//>/&gt;}"
+    local e_artist="${_artist//&/&amp;}"; e_artist="${e_artist//</&lt;}"; e_artist="${e_artist//>/&gt;}"
+    local e_album="${_album//&/&amp;}"; e_album="${e_album//</&lt;}"; e_album="${e_album//>/&gt;}"
+
+    local pct=0 progress_str=""
+    local nl=$'\n'
+    if [[ "${new_dur:-0}" -gt 0 ]] 2>/dev/null; then
+        pct=$(( new_pos * 100 / new_dur ))
+        [[ "$pct" -lt 0 || "$pct" -gt 100 ]] && pct=0
+        [[ "$pct" -gt 0 ]] && progress_str="${nl}<span size='10000' color='${_accent}'>Progress: ${pct}%</span>"
+    fi
+
+    local icon="󰎆"
+    [[ "$new_status" = "Paused" ]] && icon="󰏥"
+
+    local text
+    if [[ "$pct" -gt 0 ]]; then
+        local len=${#e_display}
+        local pc=$(( len * pct / 100 ))
+        if [[ "$pc" -gt 0 ]]; then
+            text="$icon <span bgalpha='30%' background='${_accent}'>${e_display:0:$pc}</span>${e_display:$pc}"
+        else
+            text="$icon $e_display"
+        fi
+    else
+        text="$icon $e_display"
+    fi
+
+    local tooltip="<span size='12000' weight='bold'>${e_title}</span>${nl}<span color='#cccccc'>${e_artist}</span>${nl}<span size='10000' color='#999999'><i>${e_album}</i></span>${progress_str}"
+
+    # JSON-escape
+    local te="${text//\\/\\\\}"; te="${te//\"/\\\"}"; te="${te//$nl/\\n}"
+    local tte="${tooltip//\\/\\\\}"; tte="${tte//\"/\\\"}"; tte="${tte//$nl/\\n}"
+
+    printf '{"text":"%s","class":"%s","tooltip":"%s","percentage":%d}\n' \
+        "$te" "${new_status,,}" "$tte" "${pct:-0}" > "${WAYBAR_STATE}.tmp.$$"
+    mv -f "${WAYBAR_STATE}.tmp.$$" "$WAYBAR_STATE"
+}
 
 # Extract album art from current track, cache it
 get_cover() {
@@ -14,7 +105,7 @@ get_cover() {
         url="$PLAYER_URL"
         album="$PLAYER_ALBUM"
     else
-        data=$(playerctl -i Shazam metadata --format '{{mpris:artUrl}}|{{xesam:url}}|{{album}}' 2>/dev/null)
+        data=$(playerctl metadata --format '{{mpris:artUrl}}|{{xesam:url}}|{{album}}' 2>/dev/null)
         [ -z "$data" ] && return 1
         IFS='|' read -r art_url url album <<< "$data"
     fi
@@ -31,7 +122,7 @@ get_cover() {
         file="$(echo -e "${file//%/\\x}")"
         if [ -f "$file" ]; then
             [ -z "$album" ] && album="unknown"
-            local artist="${PLAYER_ARTIST:-$(playerctl -i Shazam metadata --format '{{artist}}' 2>/dev/null)}"
+            local artist="${PLAYER_ARTIST:-$(playerctl metadata --format '{{artist}}' 2>/dev/null)}"
             [ -z "$artist" ] && artist="unknown"
             local cache_name="$(echo "$artist - $album" | base64 | tr '/' '_').png"
             local cover="$COVER_DIR/$cache_name"
@@ -59,7 +150,7 @@ get_song_display() {
         artist="$PLAYER_ARTIST"
         url="$PLAYER_URL"
     else
-        data=$(playerctl -i Shazam metadata --format '{{title}}|{{artist}}|{{xesam:url}}' 2>/dev/null)
+        data=$(playerctl metadata --format '{{title}}|{{artist}}|{{xesam:url}}' 2>/dev/null)
         [ -z "$data" ] && { echo "Unknown"; echo ""; return; }
         IFS='|' read -r title artist url <<< "$data"
     fi
@@ -104,7 +195,8 @@ send_notification() {
         -h string:x-canonical-private-synchronous:"$NOTIFY_TAG" \
         -i "$icon" \
         "$title" "$artist"
-    pkill -RTMIN+11 waybar 2>/dev/null || true
+    _quick_update_waybar
+    pkill -RTMIN+11 waybar || true
 }
 
 do_toggle() {
@@ -114,7 +206,7 @@ do_toggle() {
     case "$status" in
         Playing) send_notification "$(get_song_display)" ;;
         Paused)  send_notification "$(get_song_display)" ;;
-        *) notify-send -a "mediactl" -h string:x-canonical-private-synchronous:"$NOTIFY_TAG" -i audio-x-generic "Playback" "Stopped"; pkill -RTMIN+11 waybar 2>/dev/null || true ;;
+        *) notify-send -a "mediactl" -h string:x-canonical-private-synchronous:"$NOTIFY_TAG" -i audio-x-generic "Playback" "Stopped"; _quick_update_waybar; pkill -RTMIN+11 waybar || true ;;
     esac
 }
 
@@ -130,7 +222,8 @@ do_stop() {
     playerctl stop 2>/dev/null
     notify-send -a "mediactl" -h string:x-canonical-private-synchronous:"$NOTIFY_TAG" \
         -i audio-x-generic "Playback" "Stopped"
-    pkill -RTMIN+11 waybar 2>/dev/null || true
+    rm -f "$WAYBAR_STATE" "$WAYBAR_INTERP" 2>/dev/null || true
+    pkill -RTMIN+11 waybar || true
 }
 
 do_seek() {
@@ -141,6 +234,9 @@ do_seek() {
         amount="${BASH_REMATCH[2]}${BASH_REMATCH[1]}"
     fi
     playerctl position "${amount}" 2>/dev/null
+    sleep 0.15
+    _quick_update_waybar
+    pkill -RTMIN+11 waybar || true
 }
 
 do_repeat() {

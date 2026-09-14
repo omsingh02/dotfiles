@@ -1,0 +1,236 @@
+#!/usr/bin/env bash
+# Author: Om Singh
+# wall-daemon: Media event listener → wallpaper theming + Waybar state
+# Architecture:
+#   1. Metadata & Status listener (track changes, play/pause/stop, seeking)
+#   2. Position interpolator (advances progress bar every 1s during playback)
+
+# Ensure only one instance of wall-daemon runs using a non-blocking flock
+exec 8>/tmp/wall-daemon.lock
+if ! flock -n 8; then
+    echo "wall-daemon is already running."
+    exit 0
+fi
+
+DAEMON_PID_FILE="/tmp/wall-daemon.pid"
+echo $$ > "$DAEMON_PID_FILE"
+
+LOG_FILE="/tmp/medianotify.log"
+echo "--- Daemon started at $(date) ---" >> "$LOG_FILE"
+
+SCRIPT_DIR="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")" && pwd)"
+WAYBAR_STATE="/tmp/waybar-media-json"
+WAYBAR_INTERP="/tmp/waybar-media-interp"
+
+# Waybar PID Cache for lightning-fast signaling (4µs builtin kill vs 37ms pkill)
+WAYBAR_PID=""
+_signal_waybar() {
+    if [[ -z "$WAYBAR_PID" ]] || ! kill -0 "$WAYBAR_PID" 2>/dev/null; then
+        WAYBAR_PID=$(pidof -s waybar)
+    fi
+    [[ -n "$WAYBAR_PID" ]] && kill -RTMIN+11 "$WAYBAR_PID" 2>/dev/null || true
+}
+
+_cleanup() {
+    echo "[$(date +'%H:%M:%S')] wall-daemon: exiting" >> "$LOG_FILE"
+    rm -f "$WAYBAR_STATE" "$WAYBAR_INTERP" 2>/dev/null
+    _signal_waybar
+}
+trap '_cleanup' EXIT
+trap 'exit 0' TERM INT HUP
+
+# --- Helper functions ---
+
+_get_accent() {
+    if [[ -f "$HOME/.cache/theme/colors-waybar.css" ]]; then
+        local col
+        col=$(awk '/@define-color color2/ {gsub(/;/,"",$3); print $3; exit}' "$HOME/.cache/theme/colors-waybar.css")
+        [[ -n "$col" ]] && { echo -n "$col"; return; }
+    fi
+    echo -n "#8e6f65"
+}
+
+# Build and atomically write Waybar JSON
+# Args: status title artist album duration position accent
+_wb() {
+    local s="$1" t="$2" a="$3" al="$4" d="$5" p="$6" ac="$7"
+    local nl=$'\n'
+    [[ -z "$t" ]] && t="Unknown"
+    [[ -z "$a" ]] && a="Unknown Artist"
+    [[ -z "$al" ]] && al="Unknown Album"
+
+    # Truncate display
+    local dr="$t — $a"
+    if [[ ${#dr} -gt 28 ]]; then
+        dr="${dr:0:28}"
+        [[ "$dr" == *" "* ]] && dr="${dr% *}"
+        dr=$(echo "$dr" | sed 's/[,;-]*$//;s/[[:space:]]*$//')
+    fi
+
+    # Pango-escape
+    local et="${t//&/&amp;}"; et="${et//</&lt;}"; et="${et//>/&gt;}"
+    local ea="${a//&/&amp;}"; ea="${ea//</&lt;}"; ea="${ea//>/&gt;}"
+    local eb="${al//&/&amp;}"; eb="${eb//</&lt;}"; eb="${eb//>/&gt;}"
+    local ed="${dr//&/&amp;}"; ed="${ed//</&lt;}"; ed="${ed//>/&gt;}"
+
+    # Percentage
+    local pct=0 ps=""
+    if [[ "${d:-0}" -gt 0 ]] 2>/dev/null; then
+        pct=$(( p * 100 / d ))
+        [[ "$pct" -lt 0 || "$pct" -gt 100 ]] && pct=0
+        [[ "$pct" -gt 0 ]] && ps="${nl}<span size='10000' color='${ac}'>Progress: ${pct}%</span>"
+    fi
+
+    local icon="󰎆"; [[ "$s" = "Paused" ]] && icon="󰏥"
+
+    # Inline progress bar
+    local txt
+    if [[ "$pct" -gt 0 ]]; then
+        local len=${#ed}
+        local pc=$(( len * pct / 100 ))
+        if [[ "$pc" -gt 0 ]]; then
+            txt="$icon <span bgalpha='30%' background='${ac}'>${ed:0:$pc}</span>${ed:$pc}"
+        else
+            txt="$icon $ed"
+        fi
+    else
+        txt="$icon $ed"
+    fi
+
+    # Tooltip with real newlines
+    local tt="<span size='12000' weight='bold'>${et}</span>${nl}<span color='#cccccc'>${ea}</span>${nl}<span size='10000' color='#999999'><i>${eb}</i></span>${ps}"
+
+    # JSON-escape and atomic write
+    local te="${txt//\\/\\\\}"; te="${te//\"/\\\"}"; te="${te//$nl/\\n}"
+    local tte="${tt//\\/\\\\}"; tte="${tte//\"/\\\"}"; tte="${tte//$nl/\\n}"
+    printf '{"text":"%s","class":"%s","tooltip":"%s","percentage":%d}\n' \
+        "$te" "${s,,}" "$tte" "${pct:-0}" > "${WAYBAR_STATE}.tmp.$$"
+    mv -f "${WAYBAR_STATE}.tmp.$$" "$WAYBAR_STATE"
+}
+
+export -f _get_accent _wb _signal_waybar
+export WAYBAR_STATE WAYBAR_INTERP LOG_FILE WAYBAR_PID
+
+# =================================================================
+# LOOP 1: Position interpolator (background)
+# Advances position and progress bar every 1s during active playback
+# =================================================================
+(
+    while true; do
+        sleep 1
+        [[ "$(cat /tmp/medianotify.state 2>/dev/null)" != "playing" ]] && continue
+        interp=$(cat "$WAYBAR_INTERP" 2>/dev/null) || continue
+        IFS='|' read -r is it ia ial id ip ie ic <<< "$interp"
+        [[ -z "$ie" || -z "$ip" || "${id:-0}" -le 0 ]] && continue
+        now=$(date +%s)
+        eus=$(( (now - ie) * 1000000 ))
+        ipos=$(( ip + eus ))
+        [[ "$ipos" -gt "$id" ]] && ipos="$id"
+        [[ "$ipos" -lt 0 ]] && ipos=0
+        _wb "$is" "$it" "$ia" "$ial" "$id" "$ipos" "$ic"
+        _signal_waybar
+    done
+) &
+echo "[$(date +'%H:%M:%S')] wall-daemon: Position interpolator started" >> "$LOG_FILE"
+
+# =================================================================
+# LOOP 2: Metadata & Status listener (foreground)
+# Listens for track changes, play/pause/stop, seek events
+# =================================================================
+CURRENT_TITLE=""
+LAST_NOTIFIED_TITLE=""
+
+while true; do
+    playerctl --follow --ignore-player=mpv,vlc,Shazam,playerctld metadata --format "{{playerName}}|{{status}}|{{title}}|{{artist}}|{{mpris:artUrl}}|{{xesam:url}}|{{album}}|{{mpris:length}}" 2>/dev/null |
+    while IFS='|' read -r player status title artist art_url url album duration; do
+        [[ "$player" =~ ^(Shazam|playerctld)$ ]] && continue
+        [[ -z "$title" && -z "$artist" ]] && continue
+        echo "[$(date +'%H:%M:%S')] wall-daemon: Meta: $player | $status | $title" >> "$LOG_FILE"
+
+        # Smart browser filter (ignore non-music video tabs)
+        if [[ "$player" =~ (brave|chromium|firefox|chrome) ]]; then
+            if [[ -z "$album" && "$art_url" != *"image/thumb"* && "$art_url" != *"scdn.co"* && "$url" != *"spotify"* && "$url" != *"youtube"* ]]; then
+                echo "[$(date +'%H:%M:%S')] wall-daemon: Filtered: web video" >> "$LOG_FILE"
+                continue
+            fi
+        fi
+
+        export PLAYER_STATUS="$status" PLAYER_TITLE="$title" PLAYER_ARTIST="$artist"
+        export PLAYER_ART_URL="$art_url" PLAYER_URL="$url" PLAYER_ALBUM="$album"
+
+        position="$(playerctl -p "$player" position 2>/dev/null || echo 0)"
+        lp="${position%.*}"; lp="${lp:-0}"; ld="${duration:-0}"
+        le=$(date +%s); la=$(_get_accent)
+
+        if [[ "$status" == "Playing" ]]; then
+            echo "playing" > /tmp/medianotify.state
+            printf '%s|%s|%s|%s|%s|%s|%s|%s\n' "$status" "$title" "$artist" "$album" "$ld" "$lp" "$le" "$la" > "$WAYBAR_INTERP"
+            _wb "$status" "$title" "$artist" "$album" "$ld" "$lp" "$la"
+            _signal_waybar
+
+            if [[ "$title" != "$LAST_NOTIFIED_TITLE" ]]; then
+                ( sleep 0.3; mediactl notify ) &
+                LAST_NOTIFIED_TITLE="$title"
+            fi
+
+            CURRENT_MODE="none"
+            [[ -f "/tmp/wall_current_mode" ]] && CURRENT_MODE=$(cat /tmp/wall_current_mode)
+            SONG_DISABLED=false
+            [[ -f "/tmp/disable_song_theme" ]] && SONG_DISABLED=true
+
+            if [[ "$SONG_DISABLED" == "false" && "$title" != "$CURRENT_TITLE" ]]; then
+                CURRENT_TITLE="$title"
+                echo "[$(date +'%H:%M:%S')] wall-daemon: Theming: $title" >> "$LOG_FILE"
+                ( "$SCRIPT_DIR/wall-song" >> "$LOG_FILE" 2>&1 ) &
+            fi
+
+        elif [[ "$status" == "Paused" ]]; then
+            echo "paused" > /tmp/medianotify.state
+            printf '%s|%s|%s|%s|%s|%s|%s|%s\n' "$status" "$title" "$artist" "$album" "$ld" "$lp" "$le" "$la" > "$WAYBAR_INTERP"
+            _wb "$status" "$title" "$artist" "$album" "$ld" "$lp" "$la"
+            _signal_waybar
+
+            CURRENT_MODE="none"
+            [[ -f "/tmp/wall_current_mode" ]] && CURRENT_MODE=$(cat /tmp/wall_current_mode)
+            SONG_DISABLED=false
+            [[ -f "/tmp/disable_song_theme" ]] && SONG_DISABLED=true
+
+            if [[ "$CURRENT_MODE" == "song" && "$SONG_DISABLED" == "false" ]]; then
+                echo "[$(date +'%H:%M:%S')] wall-daemon: Scheduling restore..." >> "$LOG_FILE"
+                ( sleep 5
+                  [[ "$(cat /tmp/medianotify.state 2>/dev/null)" != "paused" ]] && exit 0
+                  cs=$(playerctl -i Shazam,playerctld status 2>/dev/null)
+                  if [[ "$cs" != "Playing" ]]; then
+                      "$SCRIPT_DIR/wall-core" restore >> "$LOG_FILE" 2>&1
+                      echo "[$(date +'%H:%M:%S')] wall-daemon: Restored" >> "$LOG_FILE"
+                  fi
+                ) &
+                CURRENT_TITLE=""
+            fi
+
+        elif [[ "$status" == "Stopped" ]]; then
+            echo "stopped" > /tmp/medianotify.state
+            rm -f "$WAYBAR_STATE" "$WAYBAR_INTERP" 2>/dev/null
+            _signal_waybar
+
+            CURRENT_MODE="none"
+            [[ -f "/tmp/wall_current_mode" ]] && CURRENT_MODE=$(cat /tmp/wall_current_mode)
+            SONG_DISABLED=false
+            [[ -f "/tmp/disable_song_theme" ]] && SONG_DISABLED=true
+
+            if [[ "$CURRENT_MODE" == "song" && "$SONG_DISABLED" == "false" ]]; then
+                echo "[$(date +'%H:%M:%S')] wall-daemon: Scheduling restore..." >> "$LOG_FILE"
+                ( sleep 5
+                  [[ "$(cat /tmp/medianotify.state 2>/dev/null)" != "stopped" ]] && exit 0
+                  cs=$(playerctl -i Shazam,playerctld status 2>/dev/null)
+                  if [[ "$cs" != "Playing" ]]; then
+                      "$SCRIPT_DIR/wall-core" restore >> "$LOG_FILE" 2>&1
+                      echo "[$(date +'%H:%M:%S')] wall-daemon: Restored" >> "$LOG_FILE"
+                  fi
+                ) &
+                CURRENT_TITLE=""
+            fi
+        fi
+    done
+    sleep 1
+done

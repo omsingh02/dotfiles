@@ -2,48 +2,77 @@
 # MAKO NOTIFICATION DAEMON CONFIG
 # ==========================================
 
-# --- Appearance ---
-font=JetBrainsMono Nerd Font 12
-width=350
-height=150
-margin=10
-padding=10
-border-size=3
+# --- Global Appearance ---
+font=JetBrainsMono Nerd Font 11
+width=360
+height=100
+margin=8
+padding=12,16
+border-size=2
 border-radius=0
-max-icon-size=128
-format=<b>%s</b>\n%b
+max-icon-size=48
 icon-location=left
+format=<b>%s</b>\n<span size="10pt" alpha="70%%">%b</span>
 
-# --- Behavior ---
+# --- Global Behavior ---
 layer=overlay
 anchor=top-right
-max-visible=5
-max-history=10
-ignore-timeout=1
-
-# --- Timeouts (in milliseconds) ---
+max-visible=4
+max-history=50
+sort=-time
+group-by=app-name
+ignore-timeout=0
 default-timeout=5000
 
-# --- Colors (injected by wallust at build time, placed here in global scope) ---
-# WALLUST_COLORS_PLACEHOLDER
+# --- Colors (injected by theming pipeline, MUST be before any [section]) ---
+# THEME_COLORS_PLACEHOLDER
 
-# Low priority notifications vanish quickly
+# ── Urgency Overrides ──
+
 [urgency=low]
-default-timeout=2000
+default-timeout=3000
 
-# High priority alerts stay until clicked
 [urgency=high]
 default-timeout=0
 border-size=3
 
-# --- Media Notifications ---
-[app-name=mediactl]
-font=sans-serif 11
-width=440
-height=110
-max-icon-size=96
-padding=20
-margin=15,15,15,15
-border-size=3
-format=<b><span size="13pt">%s</span></b>\n<span size="11pt" alpha="70%%">%b</span>
+# ── Do Not Disturb ──
 
+[mode=do-not-disturb]
+invisible=1
+
+# ── Per-App Criteria ──
+
+# Volume / Brightness OSD — compact, no icon
+[app-name=sysnotify]
+width=260
+height=60
+padding=8,12
+icons=0
+format=<b>%s</b>  %b
+default-timeout=1500
+
+# Media — album art prominence
+[app-name=mediactl]
+width=400
+height=100
+max-icon-size=80
+padding=14,16
+format=<b><span size="12pt">%s</span></b>\n<span size="10pt" alpha="70%%">%b</span>
+
+# System panel — history readout
+[app-name=syspanel]
+width=380
+default-timeout=8000
+format=<b>%s</b>\n<span size="9pt" alpha="80%%">%b</span>
+
+# Screenshots / Screen recording
+[app-name=screenshot]
+default-timeout=3000
+
+[app-name=screenrecord]
+default-timeout=3000
+
+# Power state changes
+[app-name=power-daemon]
+default-timeout=4000

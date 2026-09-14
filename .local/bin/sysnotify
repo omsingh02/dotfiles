@@ -12,11 +12,11 @@ send_notification() {
     local icon=$2
     local message=$3
     
-    notify-send \
+    notify-send -a sysnotify \
         -h string:x-canonical-private-synchronous:$NOTIFY_TAG \
         -h int:value:"$value" \
         -i "$icon" \
-        "System" "$message"
+        "$message"
 }
 
 case "$1" in
@@ -97,7 +97,7 @@ case "$1" in
         muted=$(wpctl get-volume @DEFAULT_AUDIO_SINK@ | grep -q MUTED && echo "yes" || echo "no")
         
         if [ "$muted" = "yes" ]; then
-            notify-send -h string:x-canonical-private-synchronous:$NOTIFY_TAG -i "audio-volume-muted" "System" "Volume Muted"
+            notify-send -a sysnotify -h string:x-canonical-private-synchronous:$NOTIFY_TAG -i "audio-volume-muted" "System" "Volume Muted"
         else
             vol=$(wpctl get-volume @DEFAULT_AUDIO_SINK@ | awk '{print int($2 * 100)}')
             send_notification "$vol" "audio-volume-high" "Volume Unmuted (${vol}%)"
@@ -109,9 +109,9 @@ case "$1" in
         muted=$(wpctl get-volume @DEFAULT_AUDIO_SOURCE@ | grep -q MUTED && echo "yes" || echo "no")
         
         if [ "$muted" = "yes" ]; then
-            notify-send -h string:x-canonical-private-synchronous:$NOTIFY_TAG -i "microphone-sensitivity-muted" "System" "Microphone Muted"
+            notify-send -a sysnotify -h string:x-canonical-private-synchronous:$NOTIFY_TAG -i "microphone-sensitivity-muted" "System" "Microphone Muted"
         else
-            notify-send -h string:x-canonical-private-synchronous:$NOTIFY_TAG -i "audio-input-microphone" "System" "Microphone Unmuted"
+            notify-send -a sysnotify -h string:x-canonical-private-synchronous:$NOTIFY_TAG -i "audio-input-microphone" "System" "Microphone Unmuted"
         fi
         ;;
         

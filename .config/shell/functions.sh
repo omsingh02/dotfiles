@@ -31,7 +31,8 @@ lfcd() {
 
 # Captive Portal Bypass for Wi-Fi
 portal() {
-    WIFI_IF="wlp3s0"
+    WIFI_IF="${WIFI_INTERFACE:-$(nmcli -t -f DEVICE,TYPE dev 2>/dev/null | grep ':wifi$' | cut -d: -f1 | head -1)}"
+    [[ -z "$WIFI_IF" ]] && WIFI_IF="wlp3s0"
 
     if [ "$1" == "open" ]; then
         echo -e "\e[1;33m[+] Opening Captive Portal Bypass...\e[0m"

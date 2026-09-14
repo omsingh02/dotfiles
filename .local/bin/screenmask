@@ -1,0 +1,1210 @@
+#!/usr/bin/env python3
+"""
+screenmask - Privacy Window Mask Utility for Wayland / Hyprland
+Hide or censor parts of windows with custom transparency, easy resizing,
+true click-through passthrough, and optional window tracking.
+"""
+
+import sys
+import os
+import time
+import json
+import socket
+import select
+import threading
+import argparse
+import subprocess
+
+import gi
+gi.require_version('Gtk', '3.0')
+gi.require_version('GtkLayerShell', '0.1')
+from gi.repository import Gtk, Gdk, GtkLayerShell, GLib
+import cairo
+
+# ---------------------------------------------------------
+# Configuration & Constants
+# ---------------------------------------------------------
+SOCK_DIR = os.environ.get("XDG_RUNTIME_DIR", f"/tmp/user-{os.getuid()}")
+SOCK_PATH = os.path.join(SOCK_DIR, "screenmask.sock")
+
+COLOR_PRESETS = {
+    "dark":     (0.067, 0.067, 0.106),  # Catppuccin Mocha Crust (#11111b)
+    "oled":     (0.000, 0.000, 0.000),  # Pure OLED Black (#000000)
+    "charcoal": (0.118, 0.118, 0.180),  # Catppuccin Base (#1e1e2e)
+    "navy":     (0.043, 0.059, 0.098),  # Deep Midnight Blue (#0b0f19)
+    "slate":    (0.180, 0.204, 0.251),  # Muted Slate (#2e3440)
+}
+
+DEFAULT_COLOR = "dark"
+DEFAULT_OPACITY = 0.95
+BORDER_RESIZE_MARGIN = 12
+CORNER_RESIZE_SIZE = 22
+
+# ---------------------------------------------------------
+# Helper Functions
+# ---------------------------------------------------------
+def notify(title, msg="", timeout_ms=2000, icon="security-high"):
+    try:
+        subprocess.Popen(
+            ["notify-send", "-a", "ScreenMask", "-t", str(timeout_ms), "-i", icon, title, msg],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+    except Exception:
+        pass
+
+def get_hypr_socket2_path():
+    sig = os.environ.get("HYPRLAND_INSTANCE_SIGNATURE")
+    if not sig:
+        return None
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+    path = os.path.join(runtime_dir, "hypr", sig, ".socket2.sock")
+    if os.path.exists(path):
+        return path
+    tmp_path = os.path.join("/tmp/hypr", sig, ".socket2.sock")
+    if os.path.exists(tmp_path):
+        return tmp_path
+    return None
+
+def run_hyprctl_json(cmd):
+    try:
+        res = subprocess.run(["hyprctl", cmd, "-j"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=1.5)
+        if res.returncode == 0 and res.stdout.strip():
+            return json.loads(res.stdout)
+    except Exception:
+        pass
+    return None
+
+def find_window_at(x, y, w=10, h=10):
+    """Find Hyprland window covering or near (x, y)"""
+    clients = run_hyprctl_json("clients")
+    if not clients:
+        return None
+    cx = x + w // 2
+    cy = y + h // 2
+    # Search backwards (topmost window first)
+    for c in reversed(clients):
+        if not c.get("mapped", True):
+            continue
+        wx, wy = c.get("at", [0, 0])
+        ww, wh = c.get("size", [0, 0])
+        if wx <= cx <= wx + ww and wy <= cy <= wy + wh:
+            return c
+    # Fallback to active window
+    active = run_hyprctl_json("activewindow")
+    if active and active.get("address"):
+        return active
+    return None
+
+def run_slurp():
+    """Run slurp with modern styling"""
+    cmd = [
+        "slurp",
+        "-d",
+        "-b", "#11111bcc",
+        "-c", "#89b4fa",
+        "-s", "#89b4fa22",
+        "-B", "#1e1e2ecc",
+        "-w", "2",
+        "-f", "%x %y %w %h %o"
+    ]
+    try:
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if res.returncode != 0 or not res.stdout.strip():
+            return None
+        parts = res.stdout.strip().split()
+        if len(parts) >= 4:
+            x, y, w, h = int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3])
+            out = parts[4] if len(parts) > 4 else ""
+            return {"x": x, "y": y, "w": w, "h": h, "output": out}
+    except FileNotFoundError:
+        print("Error: 'slurp' not found. Please install slurp.", file=sys.stderr)
+    except Exception as e:
+        print(f"Error running slurp: {e}", file=sys.stderr)
+    return None
+
+# ---------------------------------------------------------
+# Mask Window Class (GTK + GtkLayerShell)
+# ---------------------------------------------------------
+class MaskWindow:
+    def __init__(self, app_manager, mask_id, x, y, w, h, opacity=DEFAULT_OPACITY,
+                 color_name=DEFAULT_COLOR, locked=False, ghost=False, track=False, output=None):
+        self.mgr = app_manager
+        self.mask_id = mask_id
+        self.x = max(0, int(x))
+        self.y = max(0, int(y))
+        self.w = max(50, int(w))
+        self.h = max(30, int(h))
+        self.opacity = max(0.05, min(1.0, round(float(opacity), 2)))
+        self.color_name = color_name if color_name in COLOR_PRESETS else DEFAULT_COLOR
+        self.locked = locked
+        self.ghost = ghost
+        self.tracked_window = None
+        self.track_offset_x = 0
+        self.track_offset_y = 0
+        self.tracked_ws_id = None
+        self.visible = True
+
+        # Interaction states
+        self.drag_action = None
+        self.drag_start_mouse_x = 0
+        self.drag_start_mouse_y = 0
+        self.drag_start_x = 0
+        self.drag_start_y = 0
+        self.drag_start_w = 0
+        self.drag_start_h = 0
+        self.hover_zone = None
+
+        # Build GTK Window
+        self.win = Gtk.Window()
+        self.win.set_title(f"screenmask-{self.mask_id}")
+        self.win.set_app_paintable(True)
+        self.win.set_decorated(False)
+        self.win.set_keep_above(True)
+
+        # Transparency support
+        screen = self.win.get_screen()
+        visual = screen.get_rgba_visual()
+        if visual:
+            self.win.set_visual(visual)
+
+        # Layer Shell configuration
+        GtkLayerShell.init_for_window(self.win)
+        GtkLayerShell.set_layer(self.win, GtkLayerShell.Layer.OVERLAY)
+        GtkLayerShell.set_namespace(self.win, "screen-mask")
+        GtkLayerShell.set_exclusive_zone(self.win, -1)
+        GtkLayerShell.set_anchor(self.win, GtkLayerShell.Edge.TOP, True)
+        GtkLayerShell.set_anchor(self.win, GtkLayerShell.Edge.LEFT, True)
+        GtkLayerShell.set_margin(self.win, GtkLayerShell.Edge.TOP, self.y)
+        GtkLayerShell.set_margin(self.win, GtkLayerShell.Edge.LEFT, self.x)
+        self.win.set_size_request(self.w, self.h)
+
+        # Events
+        self.win.add_events(
+            Gdk.EventMask.BUTTON_PRESS_MASK |
+            Gdk.EventMask.BUTTON_RELEASE_MASK |
+            Gdk.EventMask.POINTER_MOTION_MASK |
+            Gdk.EventMask.SCROLL_MASK |
+            Gdk.EventMask.KEY_PRESS_MASK |
+            Gdk.EventMask.LEAVE_NOTIFY_MASK
+        )
+
+        self.win.connect("draw", self.on_draw)
+        self.win.connect("button-press-event", self.on_button_press)
+        self.win.connect("button-release-event", self.on_button_release)
+        self.win.connect("motion-notify-event", self.on_motion_notify)
+        self.win.connect("leave-notify-event", self.on_leave_notify)
+        self.win.connect("scroll-event", self.on_scroll)
+        self.win.connect("key-press-event", self.on_key_press)
+
+        self.win.show_all()
+        self.update_input_shape()
+
+        if track:
+            self.enable_tracking()
+
+    def get_color_rgb(self):
+        return COLOR_PRESETS.get(self.color_name, COLOR_PRESETS["dark"])
+
+    def set_position_and_size(self, x, y, w, h):
+        self.x = max(0, int(x))
+        self.y = max(0, int(y))
+        self.w = max(50, int(w))
+        self.h = max(30, int(h))
+        GtkLayerShell.set_margin(self.win, GtkLayerShell.Edge.LEFT, self.x)
+        GtkLayerShell.set_margin(self.win, GtkLayerShell.Edge.TOP, self.y)
+        self.win.set_size_request(self.w, self.h)
+        self.win.resize(self.w, self.h)
+        self.update_input_shape()
+        self.win.queue_draw()
+
+    def update_input_shape(self):
+        """Update Wayland input region for click-through or interactive mode"""
+        gdk_win = self.win.get_window()
+        if not gdk_win:
+            return
+
+        if not self.locked:
+            # Interactive edit mode: full input capture + keyboard interactivity
+            GtkLayerShell.set_keyboard_mode(self.win, GtkLayerShell.KeyboardMode.ON_DEMAND)
+            full_region = cairo.Region(cairo.RectangleInt(0, 0, self.w, self.h))
+            gdk_win.input_shape_combine_region(full_region, 0, 0)
+        else:
+            # Locked privacy mode: clicks pass straight through!
+            GtkLayerShell.set_keyboard_mode(self.win, GtkLayerShell.KeyboardMode.NONE)
+            if self.ghost:
+                # 100% pure click-through everywhere
+                gdk_win.input_shape_combine_region(cairo.Region(), 0, 0)
+            else:
+                # Click-through everywhere EXCEPT top-right unlock pip (22x22)
+                pip_w = 24
+                pip_h = 24
+                pip_x = max(0, self.w - pip_w - 2)
+                pip_y = 2
+                pip_region = cairo.Region(cairo.RectangleInt(pip_x, pip_y, pip_w, pip_h))
+                gdk_win.input_shape_combine_region(pip_region, 0, 0)
+
+    def set_locked(self, locked, ghost=None):
+        self.locked = bool(locked)
+        if ghost is not None:
+            self.ghost = bool(ghost)
+        self.drag_action = None
+        self.update_input_shape()
+        self.win.queue_draw()
+
+    def set_opacity(self, val):
+        self.opacity = max(0.05, min(1.0, round(float(val), 2)))
+        self.win.queue_draw()
+
+    def cycle_color(self):
+        keys = list(COLOR_PRESETS.keys())
+        idx = (keys.index(self.color_name) + 1) % len(keys)
+        self.color_name = keys[idx]
+        self.win.queue_draw()
+
+    def enable_tracking(self):
+        target = find_window_at(self.x, self.y, self.w, self.h)
+        if target:
+            self.tracked_window = target.get("address")
+            wx, wy = target.get("at", [0, 0])
+            self.track_offset_x = self.x - wx
+            self.track_offset_y = self.y - wy
+            ws = target.get("workspace", {})
+            self.tracked_ws_id = ws.get("id") if isinstance(ws, dict) else ws
+            self.win.queue_draw()
+            return True
+        return False
+
+    def disable_tracking(self):
+        self.tracked_window = None
+        self.win.queue_draw()
+
+    def toggle_tracking(self):
+        if self.tracked_window:
+            self.disable_tracking()
+        else:
+            self.enable_tracking()
+
+    def handle_window_update(self, client_map, active_ws_id):
+        """Called by daemon when Hyprland reports window/workspace changes"""
+        if not self.tracked_window:
+            return
+        c = client_map.get(self.tracked_window)
+        if not c:
+            # Window was closed; detach tracking
+            self.disable_tracking()
+            return
+
+        # Check workspace visibility
+        c_ws = c.get("workspace", {})
+        c_ws_id = c_ws.get("id") if isinstance(c_ws, dict) else c_ws
+        if active_ws_id is not None and c_ws_id is not None:
+            should_show = (c_ws_id == active_ws_id)
+            if should_show and not self.visible:
+                self.win.show()
+                self.visible = True
+            elif not should_show and self.visible:
+                self.win.hide()
+                self.visible = False
+                return
+
+        # Update position based on window's current coordinates
+        wx, wy = c.get("at", [0, 0])
+        new_x = max(0, wx + self.track_offset_x)
+        new_y = max(0, wy + self.track_offset_y)
+        if new_x != self.x or new_y != self.y:
+            self.x = new_x
+            self.y = new_y
+            GtkLayerShell.set_margin(self.win, GtkLayerShell.Edge.LEFT, self.x)
+            GtkLayerShell.set_margin(self.win, GtkLayerShell.Edge.TOP, self.y)
+
+    # -----------------------------------------------------
+    # Rendering (Cairo)
+    # -----------------------------------------------------
+    def on_draw(self, widget, cr):
+        # Clear background completely
+        cr.set_operator(cairo.OPERATOR_CLEAR)
+        cr.paint()
+        cr.set_operator(cairo.OPERATOR_OVER)
+
+        w, h = self.w, self.h
+        r = 8.0  # corner radius
+
+        def rounded_rect(cx, cy, cw, ch, cradius):
+            deg = 3.141592653589793 / 180.0
+            cr.new_sub_path()
+            cr.arc(cx + cw - cradius, cy + cradius, cradius, -90 * deg, 0 * deg)
+            cr.arc(cx + cw - cradius, cy + ch - cradius, cradius, 0 * deg, 90 * deg)
+            cr.arc(cx + cradius, cy + ch - cradius, cradius, 90 * deg, 180 * deg)
+            cr.arc(cx + cradius, cy + cradius, cradius, 180 * deg, 270 * deg)
+            cr.close_path()
+
+        # 1. Draw Main Mask Body
+        red, green, blue = self.get_color_rgb()
+        cr.set_source_rgba(red, green, blue, self.opacity)
+        rounded_rect(0, 0, w, h, r)
+        cr.fill()
+
+        # 2. Render Based on Mode
+        if self.locked:
+            # Locked Privacy Mode: Clean shield
+            if not self.ghost and w >= 30 and h >= 30:
+                # Subtle unlock badge in top-right corner
+                pip_x = w - 22
+                pip_y = 4
+                cr.set_source_rgba(1.0, 1.0, 1.0, 0.20)
+                cr.arc(pip_x + 9, pip_y + 9, 8, 0, 6.283)
+                cr.fill()
+                cr.set_source_rgba(red, green, blue, 0.9)
+                cr.rectangle(pip_x + 5, pip_y + 8, 8, 6)
+                cr.fill()
+                cr.set_source_rgba(1.0, 1.0, 1.0, 0.6)
+                cr.arc(pip_x + 9, pip_y + 8, 3, 3.14, 0)
+                cr.stroke()
+            return False
+
+        # --- UNLOCKED / EDIT MODE DECORATIONS ---
+
+        # 1. Accent border outline
+        cr.set_source_rgba(0.537, 0.706, 0.980, 0.65)  # Catppuccin Blue (#89b4fa)
+        cr.set_line_width(1.5)
+        rounded_rect(1, 1, w - 2, h - 2, r)
+        cr.stroke()
+
+        # 2. Corner Bracket Grips
+        cr.set_source_rgba(0.537, 0.706, 0.980, 0.9)
+        cr.set_line_width(2.5)
+        cs = min(12, min(w, h) // 4)
+        # Top-Left
+        cr.move_to(3, 3 + cs); cr.line_to(3, 3); cr.line_to(3 + cs, 3); cr.stroke()
+        # Top-Right
+        cr.move_to(w - 3 - cs, 3); cr.line_to(w - 3, 3); cr.line_to(w - 3, 3 + cs); cr.stroke()
+        # Bottom-Left
+        cr.move_to(3, h - 3 - cs); cr.line_to(3, h - 3); cr.line_to(3 + cs, h - 3); cr.stroke()
+        # Bottom-Right
+        cr.move_to(w - 3 - cs, h - 3); cr.line_to(w - 3, h - 3); cr.line_to(w - 3, h - 3 - cs); cr.stroke()
+
+        # 3. Mini Toolbar Pill
+        if w >= 130 and h >= 45:
+            pill_h = 24
+            pill_y = 6
+            pill_w = min(w - 20, 240)
+            pill_x = (w - pill_w) // 2
+
+            cr.set_source_rgba(0.094, 0.094, 0.145, 0.92)  # Catppuccin Crust
+            rounded_rect(pill_x, pill_y, pill_w, pill_h, 12)
+            cr.fill()
+            cr.set_source_rgba(0.537, 0.706, 0.980, 0.4)
+            cr.set_line_width(1.0)
+            rounded_rect(pill_x, pill_y, pill_w, pill_h, 12)
+            cr.stroke()
+
+            # Text Labels & Badges
+            cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
+            cr.set_font_size(10.0)
+
+            # Mask ID + Opacity
+            cr.set_source_rgba(0.804, 0.839, 0.957, 0.95)
+            pct = int(self.opacity * 100)
+            label = f"#{self.mask_id} {pct}%"
+            cr.move_to(pill_x + 8, pill_y + 16)
+            cr.show_text(label)
+
+            # Track status icon
+            if self.tracked_window:
+                cr.set_source_rgba(0.651, 0.890, 0.631, 0.95)  # Green
+            else:
+                cr.set_source_rgba(0.5, 0.5, 0.6, 0.6)
+            cr.move_to(pill_x + 65, pill_y + 16)
+            cr.show_text("🎯")
+
+            # Lock button
+            cr.set_source_rgba(0.980, 0.702, 0.529, 0.95)  # Peach/Yellow
+            cr.move_to(pill_x + pill_w - 55, pill_y + 16)
+            cr.show_text("🔒Lock")
+
+            # Close [X]
+            cr.set_source_rgba(0.949, 0.545, 0.576, 0.95)  # Red
+            cr.move_to(pill_x + pill_w - 18, pill_y + 16)
+            cr.show_text("✕")
+
+        # 4. Center Dimension Watermark while dragging
+        if w >= 180 and h >= 100 and self.drag_action:
+            cr.select_font_face("Monospace", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
+            cr.set_font_size(12.0)
+            dim_str = f"{w} × {h}"
+            ext = cr.text_extents(dim_str)
+            cr.set_source_rgba(1.0, 1.0, 1.0, 0.25)
+            cr.move_to((w - ext.width) // 2, (h + ext.height) // 2)
+            cr.show_text(dim_str)
+
+        return False
+
+    # -----------------------------------------------------
+    # Hit Testing & Cursor Management
+    # -----------------------------------------------------
+    def get_hit_zone(self, mx, my):
+        w, h = self.w, self.h
+        m = BORDER_RESIZE_MARGIN
+        cs = CORNER_RESIZE_SIZE
+
+        # Check Toolbar Buttons first
+        if w >= 130 and h >= 45:
+            pill_h = 24
+            pill_y = 6
+            pill_w = min(w - 20, 240)
+            pill_x = (w - pill_w) // 2
+            if pill_x <= mx <= pill_x + pill_w and pill_y <= my <= pill_y + pill_h:
+                if mx >= pill_x + pill_w - 22:
+                    return "btn_close"
+                if mx >= pill_x + pill_w - 60:
+                    return "btn_lock"
+                if pill_x + 55 <= mx <= pill_x + 85:
+                    return "btn_track"
+                return "toolbar"
+
+        # Check Corners
+        if mx < cs and my < cs:
+            return "nw"
+        if mx > w - cs and my < cs:
+            return "ne"
+        if mx < cs and my > h - cs:
+            return "sw"
+        if mx > w - cs and my > h - cs:
+            return "se"
+
+        # Check Edges
+        if my < m:
+            return "n"
+        if my > h - m:
+            return "s"
+        if mx < m:
+            return "w"
+        if mx > w - m:
+            return "e"
+
+        return "body"
+
+    def set_cursor_for_zone(self, zone):
+        gdk_win = self.win.get_window()
+        if not gdk_win:
+            return
+        display = Gdk.Display.get_default()
+
+        cursor_map = {
+            "nw": "nw-resize",
+            "ne": "ne-resize",
+            "sw": "sw-resize",
+            "se": "se-resize",
+            "n":  "n-resize",
+            "s":  "s-resize",
+            "w":  "w-resize",
+            "e":  "e-resize",
+            "btn_close": "pointer",
+            "btn_lock": "pointer",
+            "btn_track": "pointer",
+            "toolbar": "grab",
+            "body": "grab"
+        }
+        cursor_name = cursor_map.get(zone, "default")
+        cursor = Gdk.Cursor.new_from_name(display, cursor_name)
+        gdk_win.set_cursor(cursor)
+
+    # -----------------------------------------------------
+    # Event Handlers
+    # -----------------------------------------------------
+    def on_button_press(self, widget, event):
+        # Middle-click (button 2): Instant close
+        if event.button == 2:
+            self.mgr.remove_mask(self.mask_id)
+            return True
+
+        # Right-click (button 3): Instant toggle lock
+        if event.button == 3:
+            self.set_locked(not self.locked)
+            return True
+
+        if event.button != 1:
+            return False
+
+        if self.locked:
+            # In locked mode, clicking the corner unlock pip unlocks it!
+            if not self.ghost:
+                self.set_locked(False)
+            return True
+
+        zone = self.get_hit_zone(event.x, event.y)
+
+        # Button clicks
+        if zone == "btn_close":
+            self.mgr.remove_mask(self.mask_id)
+            return True
+        elif zone == "btn_lock":
+            self.set_locked(True)
+            return True
+        elif zone == "btn_track":
+            self.toggle_tracking()
+            return True
+
+        # Begin Drag or Resize
+        self.drag_action = zone
+        self.drag_start_mouse_x = event.x_root
+        self.drag_start_mouse_y = event.y_root
+        self.drag_start_x = self.x
+        self.drag_start_y = self.y
+        self.drag_start_w = self.w
+        self.drag_start_h = self.h
+
+        gdk_win = self.win.get_window()
+        if gdk_win and zone in ("body", "toolbar"):
+            gdk_win.set_cursor(Gdk.Cursor.new_from_name(Gdk.Display.get_default(), "grabbing"))
+
+        return True
+
+    def on_button_release(self, widget, event):
+        if self.drag_action:
+            self.drag_action = None
+            if self.tracked_window:
+                target = find_window_at(self.x, self.y, self.w, self.h)
+                if target and target.get("address") == self.tracked_window:
+                    wx, wy = target.get("at", [0, 0])
+                    self.track_offset_x = self.x - wx
+                    self.track_offset_y = self.y - wy
+            self.update_input_shape()
+            self.set_cursor_for_zone(self.get_hit_zone(event.x, event.y))
+            self.win.queue_draw()
+        return True
+
+    def on_motion_notify(self, widget, event):
+        if self.locked:
+            return False
+
+        if not self.drag_action:
+            zone = self.get_hit_zone(event.x, event.y)
+            if zone != self.hover_zone:
+                self.hover_zone = zone
+                self.set_cursor_for_zone(zone)
+            return True
+
+        dx = event.x_root - self.drag_start_mouse_x
+        dy = event.y_root - self.drag_start_mouse_y
+
+        action = self.drag_action
+        new_x, new_y = self.drag_start_x, self.drag_start_y
+        new_w, new_h = self.drag_start_w, self.drag_start_h
+
+        if action in ("body", "toolbar"):
+            new_x = max(0, int(self.drag_start_x + dx))
+            new_y = max(0, int(self.drag_start_y + dy))
+        else:
+            if "e" in action:
+                new_w = max(50, int(self.drag_start_w + dx))
+            if "s" in action:
+                new_h = max(30, int(self.drag_start_h + dy))
+            if "w" in action:
+                calc_w = max(50, int(self.drag_start_w - dx))
+                new_x = max(0, int(self.drag_start_x + (self.drag_start_w - calc_w)))
+                new_w = calc_w
+            if "n" in action:
+                calc_h = max(30, int(self.drag_start_h - dy))
+                new_y = max(0, int(self.drag_start_y + (self.drag_start_h - calc_h)))
+                new_h = calc_h
+
+        self.set_position_and_size(new_x, new_y, new_w, new_h)
+        return True
+
+    def on_leave_notify(self, widget, event):
+        if not self.drag_action and not self.locked:
+            self.hover_zone = None
+            gdk_win = self.win.get_window()
+            if gdk_win:
+                gdk_win.set_cursor(None)
+        return False
+
+    def on_scroll(self, widget, event):
+        if event.direction == Gdk.ScrollDirection.UP:
+            self.set_opacity(self.opacity + 0.05)
+        elif event.direction == Gdk.ScrollDirection.DOWN:
+            self.set_opacity(self.opacity - 0.05)
+        elif event.direction == Gdk.ScrollDirection.SMOOTH:
+            _, delta_y = event.get_scroll_deltas()
+            if delta_y < 0:
+                self.set_opacity(self.opacity + 0.05)
+            elif delta_y > 0:
+                self.set_opacity(self.opacity - 0.05)
+        return True
+
+    def on_key_press(self, widget, event):
+        kv = event.keyval
+        mods = event.state & (Gdk.ModifierType.SHIFT_MASK | Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.MOD1_MASK)
+        step = 1 if (mods & Gdk.ModifierType.SHIFT_MASK) else (50 if (mods & Gdk.ModifierType.CONTROL_MASK) else 10)
+        is_alt = bool(mods & Gdk.ModifierType.MOD1_MASK)
+
+        # Close: Q, Escape
+        if kv in (Gdk.KEY_q, Gdk.KEY_Q, Gdk.KEY_Escape):
+            self.mgr.remove_mask(self.mask_id)
+            return True
+
+        # Lock: L, Space
+        elif kv in (Gdk.KEY_l, Gdk.KEY_L, Gdk.KEY_space):
+            self.set_locked(True)
+            return True
+
+        # Track: T
+        elif kv in (Gdk.KEY_t, Gdk.KEY_T):
+            self.toggle_tracking()
+            return True
+
+        # Cycle color theme: C
+        elif kv in (Gdk.KEY_c, Gdk.KEY_C):
+            self.cycle_color()
+            return True
+
+        # Reselect with slurp: R
+        elif kv in (Gdk.KEY_r, Gdk.KEY_R):
+            geom = run_slurp()
+            if geom:
+                self.set_position_and_size(geom["x"], geom["y"], geom["w"], geom["h"])
+            return True
+
+        # Opacity adjustment: + / -, [ / ]
+        elif kv in (Gdk.KEY_plus, Gdk.KEY_equal, Gdk.KEY_bracketright):
+            self.set_opacity(self.opacity + 0.05)
+            return True
+        elif kv in (Gdk.KEY_minus, Gdk.KEY_underscore, Gdk.KEY_bracketleft):
+            self.set_opacity(self.opacity - 0.05)
+            return True
+
+        # Number keys: 1-9 for 10%-90%, 0 for 100%
+        elif Gdk.KEY_1 <= kv <= Gdk.KEY_9:
+            self.set_opacity((kv - Gdk.KEY_0) / 10.0)
+            return True
+        elif kv == Gdk.KEY_0:
+            self.set_opacity(1.0)
+            return True
+
+        # Arrow keys: Move or Resize (with Alt)
+        elif kv == Gdk.KEY_Left:
+            if is_alt:
+                self.set_position_and_size(self.x, self.y, self.w - step, self.h)
+            else:
+                self.set_position_and_size(self.x - step, self.y, self.w, self.h)
+            return True
+        elif kv == Gdk.KEY_Right:
+            if is_alt:
+                self.set_position_and_size(self.x, self.y, self.w + step, self.h)
+            else:
+                self.set_position_and_size(self.x + step, self.y, self.w, self.h)
+            return True
+        elif kv == Gdk.KEY_Up:
+            if is_alt:
+                self.set_position_and_size(self.x, self.y, self.w, self.h - step)
+            else:
+                self.set_position_and_size(self.x, self.y - step, self.w, self.h)
+            return True
+        elif kv == Gdk.KEY_Down:
+            if is_alt:
+                self.set_position_and_size(self.x, self.y, self.w, self.h + step)
+            else:
+                self.set_position_and_size(self.x, self.y + step, self.w, self.h)
+            return True
+
+        return False
+
+    def destroy(self):
+        self.win.destroy()
+
+
+# ---------------------------------------------------------
+# Application Manager & Daemon Controller
+# ---------------------------------------------------------
+class MaskManager:
+    def __init__(self):
+        self.masks = {}
+        self.next_id = 1
+        self.running = True
+        self.hypr_sock = None
+        self.server_sock = None
+
+    def add_mask(self, x, y, w, h, opacity=DEFAULT_OPACITY, color=DEFAULT_COLOR,
+                 locked=False, ghost=False, track=False, output=None):
+        mid = self.next_id
+        self.next_id += 1
+        mask = MaskWindow(self, mid, x, y, w, h, opacity=opacity,
+                          color_name=color, locked=locked, ghost=ghost,
+                          track=track, output=output)
+        self.masks[mid] = mask
+        return mid
+
+    def remove_mask(self, mid):
+        if mid in self.masks:
+            mask = self.masks.pop(mid)
+            mask.destroy()
+            if not self.masks:
+                GLib.idle_add(self._quit_gtk)
+            return True
+        return False
+
+    def _quit_gtk(self):
+        Gtk.main_quit()
+        return False
+
+    def clear_all(self):
+        for mid, mask in list(self.masks.items()):
+            mask.destroy()
+        self.masks.clear()
+        GLib.idle_add(self._quit_gtk)
+        return False
+
+    def set_locked(self, target="all", state=True):
+        for mid, mask in self.masks.items():
+            if target in ("all", str(mid)):
+                mask.set_locked(state)
+        return False
+
+    def toggle_locked(self, target="all"):
+        for mid, mask in self.masks.items():
+            if target in ("all", str(mid)):
+                mask.set_locked(not mask.locked)
+        return False
+
+    def set_opacity(self, val, target="all"):
+        for mid, mask in self.masks.items():
+            if target in ("all", str(mid)):
+                mask.set_opacity(val)
+        return False
+
+    def set_color(self, color_name, target="all"):
+        for mid, mask in self.masks.items():
+            if target in ("all", str(mid)):
+                if color_name in COLOR_PRESETS:
+                    mask.color_name = color_name
+                    mask.win.queue_draw()
+        return False
+
+    def toggle_track(self, target="all"):
+        for mid, mask in self.masks.items():
+            if target in ("all", str(mid)):
+                mask.toggle_tracking()
+        return False
+
+    def get_status_list(self):
+        items = []
+        for mid, m in self.masks.items():
+            items.append({
+                "id": mid,
+                "x": m.x, "y": m.y, "w": m.w, "h": m.h,
+                "opacity": m.opacity,
+                "color": m.color_name,
+                "locked": m.locked,
+                "ghost": m.ghost,
+                "tracked": bool(m.tracked_window)
+            })
+        return items
+
+    # -----------------------------------------------------
+    # Hyprland Socket2 Listener (Window Tracking)
+    # -----------------------------------------------------
+    def start_hypr_listener(self):
+        sock_path = get_hypr_socket2_path()
+        if not sock_path:
+            return
+
+        def listener():
+            while self.running:
+                try:
+                    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                    s.connect(sock_path)
+                    while self.running:
+                        r, _, _ = select.select([s], [], [], 1.0)
+                        if not r:
+                            continue
+                        chunk = s.recv(4096).decode('utf-8', errors='ignore')
+                        if not chunk:
+                            break
+                        needs_update = False
+                        for line in chunk.split('\n'):
+                            if any(ev in line for ev in ("movewindow", "activewindow", "workspace", "openwindow", "closewindow")):
+                                needs_update = True
+                                break
+                        if needs_update and self.masks:
+                            has_tracked = any(m.tracked_window for m in self.masks.values())
+                            if has_tracked:
+                                clients = run_hyprctl_json("clients")
+                                active_ws = run_hyprctl_json("activeworkspace")
+                                active_ws_id = active_ws.get("id") if active_ws else None
+                                if clients:
+                                    cmap = {c["address"]: c for c in clients if "address" in c}
+                                    GLib.idle_add(self._update_tracked_masks, cmap, active_ws_id)
+                    s.close()
+                except Exception:
+                    time.sleep(2.0)
+
+        t = threading.Thread(target=listener, daemon=True)
+        t.start()
+
+    def _update_tracked_masks(self, cmap, active_ws_id):
+        for m in list(self.masks.values()):
+            m.handle_window_update(cmap, active_ws_id)
+        return False
+
+    # -----------------------------------------------------
+    # Daemon IPC Socket Server
+    # -----------------------------------------------------
+    def start_ipc_server(self):
+        if os.path.exists(SOCK_PATH):
+            try:
+                os.unlink(SOCK_PATH)
+            except OSError:
+                pass
+
+        self.server_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.server_sock.bind(SOCK_PATH)
+        self.server_sock.listen(10)
+
+        def server_loop():
+            while self.running:
+                try:
+                    r, _, _ = select.select([self.server_sock], [], [], 1.0)
+                    if not r:
+                        continue
+                    conn, _ = self.server_sock.accept()
+                    threading.Thread(target=self.handle_client, args=(conn,), daemon=True).start()
+                except Exception:
+                    break
+
+        t = threading.Thread(target=server_loop, daemon=True)
+        t.start()
+
+    def handle_client(self, conn):
+        try:
+            data = conn.recv(4096).decode('utf-8', errors='ignore')
+            if not data:
+                conn.close()
+                return
+            req = json.loads(data)
+            cmd = req.get("cmd")
+            resp = {"status": "ok"}
+
+            if cmd == "add":
+                def _do_add():
+                    self.add_mask(
+                        req.get("x", 100),
+                        req.get("y", 100),
+                        req.get("w", 400),
+                        req.get("h", 250),
+                        req.get("opacity", DEFAULT_OPACITY),
+                        req.get("color", DEFAULT_COLOR),
+                        req.get("locked", False),
+                        req.get("ghost", False),
+                        req.get("track", False),
+                        req.get("output", None)
+                    )
+                    return False
+                GLib.idle_add(_do_add)
+                resp["message"] = "Mask added"
+
+            elif cmd == "clear":
+                GLib.idle_add(self.clear_all)
+                resp["message"] = "All masks cleared"
+
+            elif cmd == "close":
+                mid = req.get("id")
+                if mid is None and self.masks:
+                    mid = max(self.masks.keys())
+                if mid:
+                    def _do_close(m=int(mid)):
+                        self.remove_mask(m)
+                        return False
+                    GLib.idle_add(_do_close)
+                    resp["message"] = f"Mask {mid} closed"
+
+            elif cmd == "lock":
+                target = str(req.get("id", "all"))
+                GLib.idle_add(lambda: self.set_locked(target, True))
+                resp["message"] = "Locked to click-through mode"
+
+            elif cmd == "unlock":
+                target = str(req.get("id", "all"))
+                GLib.idle_add(lambda: self.set_locked(target, False))
+                resp["message"] = "Unlocked to edit mode"
+
+            elif cmd == "toggle-lock":
+                target = str(req.get("id", "all"))
+                GLib.idle_add(lambda: self.toggle_locked(target))
+                resp["message"] = "Toggled lock state"
+
+            elif cmd == "opacity":
+                val = req.get("val", DEFAULT_OPACITY)
+                target = str(req.get("id", "all"))
+                GLib.idle_add(lambda: self.set_opacity(val, target))
+                resp["message"] = f"Opacity set to {val}"
+
+            elif cmd == "color":
+                c = req.get("color", DEFAULT_COLOR)
+                target = str(req.get("id", "all"))
+                GLib.idle_add(lambda: self.set_color(c, target))
+                resp["message"] = f"Color set to {c}"
+
+            elif cmd == "track":
+                target = str(req.get("id", "all"))
+                GLib.idle_add(lambda: self.toggle_track(target))
+                resp["message"] = "Toggled tracking"
+
+            elif cmd == "list":
+                resp["masks"] = self.get_status_list()
+
+            conn.sendall(json.dumps(resp).encode('utf-8'))
+        except Exception as e:
+            err = json.dumps({"status": "error", "error": str(e)})
+            try:
+                conn.sendall(err.encode('utf-8'))
+            except Exception:
+                pass
+        finally:
+            conn.close()
+
+
+# ---------------------------------------------------------
+# Client IPC Dispatcher
+# ---------------------------------------------------------
+def send_ipc(req, wait_for_resp=True, timeout=2.0):
+    if not os.path.exists(SOCK_PATH):
+        return None
+    try:
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.settimeout(timeout)
+        s.connect(SOCK_PATH)
+        s.sendall(json.dumps(req).encode('utf-8'))
+        if wait_for_resp:
+            resp_data = s.recv(8192).decode('utf-8')
+            s.close()
+            return json.loads(resp_data)
+        s.close()
+        return {"status": "ok"}
+    except Exception:
+        return None
+
+def is_daemon_running():
+    resp = send_ipc({"cmd": "list"}, wait_for_resp=True, timeout=0.5)
+    return resp is not None
+
+def spawn_daemon():
+    """Launch daemon process in background"""
+    script_path = os.path.abspath(__file__)
+    subprocess.Popen(
+        [sys.executable, script_path, "--daemon"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True
+    )
+    for _ in range(40):
+        time.sleep(0.05)
+        if os.path.exists(SOCK_PATH) and is_daemon_running():
+            return True
+    return False
+
+
+# ---------------------------------------------------------
+# Main CLI Router
+# ---------------------------------------------------------
+def main():
+    parser = argparse.ArgumentParser(
+        prog="screenmask",
+        description="Privacy Window Mask Utility for Wayland / Hyprland"
+    )
+    parser.add_argument("--daemon", action="store_true", help="Internal flag: run as daemon")
+
+    subparsers = parser.add_subparsers(dest="command", help="Subcommand to run")
+
+    # 'add' command
+    p_add = subparsers.add_parser("add", help="Add a new privacy mask")
+    p_add.add_argument("--x", type=int, help="X coordinate (skips slurp if provided)")
+    p_add.add_argument("--y", type=int, help="Y coordinate")
+    p_add.add_argument("--w", type=int, help="Width in pixels")
+    p_add.add_argument("--h", type=int, help="Height in pixels")
+    p_add.add_argument("--opacity", type=float, default=DEFAULT_OPACITY, help="Opacity (0.05 to 1.0)")
+    p_add.add_argument("--color", choices=list(COLOR_PRESETS.keys()), default=DEFAULT_COLOR, help="Color preset")
+    p_add.add_argument("--locked", action="store_true", help="Start directly in click-through mode")
+    p_add.add_argument("--ghost", action="store_true", help="Pure click-through without corner unlock pip")
+    p_add.add_argument("--track", action="store_true", help="Anchor to underlying window")
+    p_add.add_argument("--no-slurp", action="store_true", help="Do not run slurp; use default centered box")
+
+    # 'list' command
+    subparsers.add_parser("list", help="List all active masks")
+
+    # 'lock' command
+    p_lock = subparsers.add_parser("lock", help="Switch mask(s) to click-through mode")
+    p_lock.add_argument("id", nargs="?", default="all", help="Mask ID or 'all'")
+
+    # 'unlock' command
+    p_unlock = subparsers.add_parser("unlock", help="Switch mask(s) to interactive edit mode")
+    p_unlock.add_argument("id", nargs="?", default="all", help="Mask ID or 'all'")
+
+    # 'toggle-lock' command
+    p_toggle = subparsers.add_parser("toggle-lock", help="Toggle between click-through and edit mode")
+    p_toggle.add_argument("id", nargs="?", default="all", help="Mask ID or 'all'")
+
+    # 'opacity' command
+    p_op = subparsers.add_parser("opacity", help="Set opacity (0.05 - 1.0)")
+    p_op.add_argument("value", type=float, help="Opacity value")
+    p_op.add_argument("id", nargs="?", default="all", help="Mask ID or 'all'")
+
+    # 'color' command
+    p_col = subparsers.add_parser("color", help="Set color preset (oled, dark, charcoal, navy, slate)")
+    p_col.add_argument("preset", choices=list(COLOR_PRESETS.keys()), help="Color preset")
+    p_col.add_argument("id", nargs="?", default="all", help="Mask ID or 'all'")
+
+    # 'track' command
+    p_track = subparsers.add_parser("track", help="Toggle window tracking for mask(s)")
+    p_track.add_argument("id", nargs="?", default="all", help="Mask ID or 'all'")
+
+    # 'close' / 'undo' command
+    p_close = subparsers.add_parser("close", help="Close a specific mask or latest")
+    p_close.add_argument("id", nargs="?", default=None, help="Mask ID to close")
+    subparsers.add_parser("undo", help="Close the most recently added mask")
+
+    # 'clear' command
+    subparsers.add_parser("clear", help="Close all masks and exit daemon")
+
+    args = parser.parse_args()
+
+    # --- DAEMON MODE ---
+    if args.daemon:
+        mgr = MaskManager()
+        mgr.start_ipc_server()
+        mgr.start_hypr_listener()
+
+        def on_sig(signum, frame):
+            mgr.clear_all()
+            sys.exit(0)
+
+        import signal
+        signal.signal(signal.SIGINT, on_sig)
+        signal.signal(signal.SIGTERM, on_sig)
+
+        try:
+            Gtk.main()
+        finally:
+            if os.path.exists(SOCK_PATH):
+                try:
+                    os.unlink(SOCK_PATH)
+                except OSError:
+                    pass
+        sys.exit(0)
+
+    # --- CLIENT MODE ---
+    cmd = args.command or "add"
+
+    if cmd == "clear":
+        resp = send_ipc({"cmd": "clear"})
+        if resp:
+            print("Cleared all privacy masks.")
+            notify("ScreenMask", "Cleared all masks", icon="security-low")
+        else:
+            print("No active masks.")
+        return
+
+    if cmd == "list":
+        resp = send_ipc({"cmd": "list"})
+        if resp and "masks" in resp:
+            masks = resp["masks"]
+            if not masks:
+                print("No active masks.")
+                return
+            print(f"{'ID':<4} {'GEOMETRY':<16} {'OPACITY':<9} {'THEME':<10} {'LOCKED':<8} {'TRACK'}")
+            print("-" * 55)
+            for m in masks:
+                geom = f"{m['x']},{m['y']} {m['w']}x{m['h']}"
+                op = f"{int(m['opacity'] * 100)}%"
+                loc = "Yes" if m["locked"] else "No"
+                trk = "Yes" if m["tracked"] else "No"
+                print(f"{m['id']:<4} {geom:<16} {op:<9} {m['color']:<10} {loc:<8} {trk}")
+        else:
+            print("No active masks (daemon not running).")
+        return
+
+    if cmd in ("lock", "unlock", "toggle-lock"):
+        if not is_daemon_running():
+            print("No active masks.")
+            return
+        resp = send_ipc({"cmd": cmd, "id": args.id})
+        if resp and "message" in resp:
+            print(resp["message"])
+            notify("ScreenMask", resp["message"], icon="security-high")
+        return
+
+    if cmd == "opacity":
+        if not is_daemon_running():
+            print("No active masks.")
+            return
+        resp = send_ipc({"cmd": "opacity", "val": args.value, "id": args.id})
+        if resp:
+            print(f"Opacity set to {args.value}")
+        return
+
+    if cmd == "color":
+        if not is_daemon_running():
+            print("No active masks.")
+            return
+        resp = send_ipc({"cmd": "color", "color": args.preset, "id": args.id})
+        if resp:
+            print(f"Color theme set to {args.preset}")
+        return
+
+    if cmd == "track":
+        if not is_daemon_running():
+            print("No active masks.")
+            return
+        resp = send_ipc({"cmd": "track", "id": args.id})
+        if resp:
+            print("Toggled window tracking.")
+        return
+
+    if cmd in ("close", "undo"):
+        if not is_daemon_running():
+            print("No active masks.")
+            return
+        cid = getattr(args, "id", None)
+        resp = send_ipc({"cmd": "close", "id": cid})
+        if resp and "message" in resp:
+            print(resp["message"])
+        return
+
+    if cmd == "add":
+        x, y, w, h, output = args.x, args.y, args.w, args.h, None
+        if x is None or y is None or w is None or h is None:
+            if not args.no_slurp:
+                geom = run_slurp()
+                if not geom:
+                    sys.exit(0)
+                x, y, w, h = geom["x"], geom["y"], geom["w"], geom["h"]
+                output = geom.get("output")
+            else:
+                x, y, w, h = 400, 300, 450, 250
+
+        if not is_daemon_running():
+            if not spawn_daemon():
+                print("Failed to start screenmask daemon.", file=sys.stderr)
+                sys.exit(1)
+
+        req = {
+            "cmd": "add",
+            "x": x, "y": y, "w": w, "h": h,
+            "opacity": args.opacity,
+            "color": args.color,
+            "locked": args.locked,
+            "ghost": args.ghost,
+            "track": args.track,
+            "output": output
+        }
+        resp = send_ipc(req)
+        if resp and resp.get("status") == "ok":
+            print(f"Mask created at {x},{y} ({w}×{h})")
+            notify("ScreenMask Created", f"{w}×{h} at ({x},{y})\nRight-click: lock/unlock • Scroll: opacity • Middle-click: close", 2500)
+        else:
+            print("Error creating mask.", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()

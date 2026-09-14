@@ -1,0 +1,305 @@
+#!/usr/bin/env bash
+# Author: Om Singh
+# wall-core (Material 3 Edition): Central wallpaper and theming orchestrator
+# Usage:
+#   wall-core set <mode> [target]
+#   wall-core stop-all
+#   wall-core restore
+#   wall-core state
+#   wall-core toggle-song
+#   wall-core toggle-mode
+#   wall-core mode [dark|light]
+#   wall-core variant [tonalspot|expressive|vibrant|fidelity|fruitsalad|monochrome|neutral]
+
+set -euo pipefail
+
+STATE_DIR="/tmp"
+MODE_FILE="$STATE_DIR/wall_current_mode"
+SONG_DISABLE_FILE="$STATE_DIR/disable_song_theme"
+SAVED_STATIC_FILE="$HOME/.cache/wall_saved_static"
+
+SCRIPT_DIR="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")" && pwd)"
+
+log() {
+    echo "[$(date +'%H:%M:%S')] wall-core: $1"
+}
+
+get_current_mode() {
+    if [[ -f "$MODE_FILE" ]]; then
+        cat "$MODE_FILE"
+    else
+        echo "none"
+    fi
+}
+
+kill_mode() {
+    local mode_to_kill="$1"
+    log "Stopping mode: $mode_to_kill"
+    case "$mode_to_kill" in
+        livewall)
+            pkill -f livewall.py || true
+            pkill -f "python.*livewall" || true
+            sleep 0.3
+            ;;
+        mpvpaper)
+            pkill mpvpaper || true
+            sleep 0.3
+            ;;
+        awww|song)
+            awww kill 2>/dev/null || true
+            sleep 0.3
+            ;;
+        *)
+            ;;
+    esac
+}
+
+ensure_awww() {
+    if ! pgrep -x awww-daemon >/dev/null 2>&1; then
+        awww-daemon &
+        disown
+        sleep 0.5
+    fi
+}
+
+stop_all() {
+    log "Stopping all wallpaper modes"
+    kill_mode "livewall"
+    kill_mode "mpvpaper"
+    awww kill 2>/dev/null || true
+    echo "none" > "$MODE_FILE"
+}
+
+restore_static() {
+    log "Restoring saved static wallpaper"
+    kill_mode "livewall"
+    kill_mode "mpvpaper"
+    ensure_awww
+    if [[ -f "$SAVED_STATIC_FILE" ]]; then
+        local saved="$(cat "$SAVED_STATIC_FILE")"
+        if [[ -f "$saved" ]]; then
+            "$SCRIPT_DIR/wall-awww" "$saved" "--restore"
+            echo "awww" > "$MODE_FILE"
+            return 0
+        fi
+    fi
+    log "No valid saved static wallpaper found."
+    local fallback="$(find "$(get_wallpaper_dir)" -maxdepth 1 -type f \( -name '*.jpg' -o -name '*.png' -o -name '*.jpeg' -o -name '*.webp' \) 2>/dev/null | shuf -n1)"
+    if [[ -n "$fallback" && -f "$fallback" ]]; then
+        "$SCRIPT_DIR/wall-awww" "$fallback" "--restore"
+        echo "awww" > "$MODE_FILE"
+        return 0
+    fi
+    return 1
+}
+
+set_mode() {
+    local new_mode="$1"
+    local target="${2:-}"
+    local current_mode="$(get_current_mode)"
+
+    if [[ "$new_mode" == "song" && -f "$SONG_DISABLE_FILE" ]]; then
+        log "Song mode is disabled. Ignoring."
+        return 0
+    fi
+
+    if [[ "$new_mode" == "awww" ]]; then
+        if [[ -z "$target" || ! -f "$target" ]]; then
+            log "Target file not found: '$target'"
+            notify-send -a "Wallpaper" -u critical "Wallpaper Error" "File not found: $target" 2>/dev/null || true
+            return 1
+        fi
+        local mime="$(file -Lb --mime-type "$target" 2>/dev/null || true)"
+        if [[ "$mime" != image/* ]]; then
+            log "Target is not an image ($mime): $target"
+            notify-send -a "Wallpaper" -u low "Wallpaper" "Not an image: $(basename "$target")" 2>/dev/null || true
+            return 1
+        fi
+    fi
+
+    if [[ "$current_mode" != "$new_mode" ]]; then
+        if [[ ("$current_mode" == "awww" || "$current_mode" == "song") && ("$new_mode" == "awww" || "$new_mode" == "song") ]]; then
+            :
+        else
+            kill_mode "$current_mode"
+        fi
+    fi
+
+    echo "$new_mode" > "$MODE_FILE"
+
+    case "$new_mode" in
+        awww)
+            ensure_awww
+            "$SCRIPT_DIR/wall-awww" "$target"
+            echo "$target" > "$SAVED_STATIC_FILE"
+            notify-send -a "Wallpaper" -i "$target" "Wallpaper Set" "$(basename "$target")" 2>/dev/null || true
+            ;;
+        livewall)
+            awww kill 2>/dev/null || true
+            sleep 0.3
+            "$SCRIPT_DIR/wall-livewall" "$target" &
+            disown
+            ;;
+        mpvpaper)
+            awww kill 2>/dev/null || true
+            sleep 0.3
+            "$SCRIPT_DIR/wall-mpvpaper" "$target" &
+            disown
+            ;;
+        song)
+            ensure_awww
+            "$SCRIPT_DIR/wall-awww" "$target" "--song"
+            ;;
+        *)
+            log "Unknown mode: $new_mode"
+            echo "none" > "$MODE_FILE"
+            exit 1
+            ;;
+    esac
+}
+
+toggle_song() {
+    if [[ -f "$SONG_DISABLE_FILE" ]]; then
+        rm -f "$SONG_DISABLE_FILE"
+        log "Song theming enabled."
+        if [[ "$(playerctl -i Shazam,playerctld status 2>/dev/null)" == "Playing" ]]; then
+            "$SCRIPT_DIR/wall-song" &
+            disown
+        fi
+    else
+        touch "$SONG_DISABLE_FILE"
+        log "Song theming disabled."
+        if [[ "$(get_current_mode)" == "song" ]]; then
+            restore_static
+        fi
+    fi
+    pkill -RTMIN+12 waybar || true
+}
+
+toggle_theme_mode() {
+    local cur_mode="dark"
+    [[ -f ~/.cache/theme_mode ]] && cur_mode="$(cat ~/.cache/theme_mode | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+    local new_mode="light"
+    [[ "$cur_mode" == "light" ]] && new_mode="dark"
+
+    echo "$new_mode" > ~/.cache/theme_mode
+    log "Toggled theme mode: $cur_mode -> $new_mode"
+
+    local current_wall=""
+    [[ -f "$SAVED_STATIC_FILE" ]] && current_wall="$(cat "$SAVED_STATIC_FILE")"
+
+    if [[ -n "$current_wall" && -f "$current_wall" ]]; then
+        "$SCRIPT_DIR/wall-awww" "$current_wall" "--$new_mode"
+    else
+        # Fallback to generating colors from first available wallpaper
+        local fallback="$(find "$(get_wallpaper_dir)" -maxdepth 1 -type f \( -name '*.jpg' -o -name '*.png' \) 2>/dev/null | head -n1)"
+        if [[ -n "$fallback" && -f "$fallback" ]]; then
+            "$SCRIPT_DIR/wall-awww" "$fallback" "--$new_mode"
+        fi
+    fi
+    notify-send -a "Theming" -u low "Theme Mode" "Switched to ${new_mode^} Mode" 2>/dev/null || true
+}
+
+set_theme_mode() {
+    local mode="${1:-}"
+    if [[ -z "$mode" ]]; then
+        local cur_mode="dark"
+        [[ -f ~/.cache/theme_mode ]] && cur_mode="$(cat ~/.cache/theme_mode | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+        echo "$cur_mode"
+        return 0
+    fi
+    mode="$(echo "$mode" | tr '[:upper:]' '[:lower:]')"
+    if [[ "$mode" != "light" && "$mode" != "dark" ]]; then
+        echo "Error: mode must be 'light' or 'dark'" >&2
+        return 1
+    fi
+    echo "$mode" > ~/.cache/theme_mode
+    local current_wall=""
+    [[ -f "$SAVED_STATIC_FILE" ]] && current_wall="$(cat "$SAVED_STATIC_FILE")"
+    if [[ -n "$current_wall" && -f "$current_wall" ]]; then
+        "$SCRIPT_DIR/wall-awww" "$current_wall" "--$mode"
+    fi
+    notify-send -a "Theming" -u low "Theme Mode" "Set to ${mode^} Mode" 2>/dev/null || true
+}
+
+set_theme_variant() {
+    local variant="${1:-}"
+    if [[ -z "$variant" ]]; then
+        local cur_v="tonalspot"
+        [[ -f ~/.cache/theme_variant ]] && cur_v="$(cat ~/.cache/theme_variant | tr -d '[:space:]')"
+        echo "$cur_v"
+        return 0
+    fi
+    echo "$variant" > ~/.cache/theme_variant
+    log "Set theme variant: $variant"
+    local current_wall=""
+    [[ -f "$SAVED_STATIC_FILE" ]] && current_wall="$(cat "$SAVED_STATIC_FILE")"
+    if [[ -n "$current_wall" && -f "$current_wall" ]]; then
+        local cur_m="dark"
+        [[ -f ~/.cache/theme_mode ]] && cur_m="$(cat ~/.cache/theme_mode | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+        "$SCRIPT_DIR/wall-awww" "$current_wall" "--$cur_m"
+    fi
+    notify-send -a "Theming" -u low "Theme Variant" "Variant: ${variant}" 2>/dev/null || true
+}
+
+print_state() {
+    local song_enabled="true"
+    [[ -f "$SONG_DISABLE_FILE" ]] && song_enabled="false"
+
+    local cur_mode="dark"
+    [[ -f ~/.cache/theme_mode ]] && cur_mode="$(cat ~/.cache/theme_mode | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+    
+    local txt="󰸦"
+    local cls="enabled"
+    if [[ "$song_enabled" == "false" ]]; then
+        txt="󰸧"
+        cls="disabled"
+    fi
+    
+    local mode="$(get_current_mode)"
+    echo "{\"text\": \"$txt\", \"tooltip\": \"Mode: $mode | Theme: $cur_mode | Song: $song_enabled\", \"class\": \"$cls\"}"
+}
+
+cmd="${1:-}"
+case "$cmd" in
+    set)
+        if [[ $# -lt 2 ]]; then echo "Usage: wall-core set <mode> [target]"; exit 1; fi
+        if [[ -f "$2" && $# -eq 2 ]]; then
+            mime="$(file -Lb --mime-type "$2" 2>/dev/null || true)"
+            if [[ "$mime" == image/* ]]; then
+                set_mode "awww" "$2"
+            elif [[ "$mime" == video/* ]]; then
+                set_mode "mpvpaper" "$2"
+            else
+                log "Error: $2 is not a supported media file ($mime)"
+                notify-send -a "Wallpaper" -u low "Wallpaper" "Not an image: $(basename "$2")" 2>/dev/null || true
+                exit 1
+            fi
+        else
+            set_mode "$2" "${3:-}"
+        fi
+        ;;
+    stop-all) stop_all ;;
+    restore)  restore_static ;;
+    state)    print_state ;;
+    toggle-song) toggle_song ;;
+    toggle-mode) toggle_theme_mode ;;
+    mode)     set_theme_mode "${2:-}" ;;
+    variant)  set_theme_variant "${2:-}" ;;
+    *)
+        if [[ -n "$cmd" && -f "$cmd" ]]; then
+            mime="$(file -Lb --mime-type "$cmd" 2>/dev/null || true)"
+            if [[ "$mime" == image/* ]]; then
+                set_mode "awww" "$cmd"
+                exit 0
+            elif [[ "$mime" == video/* ]]; then
+                set_mode "mpvpaper" "$cmd"
+                exit 0
+            else
+                log "Error: $cmd is not a supported media file ($mime)"
+                notify-send -a "Wallpaper" -u low "Wallpaper" "Not an image: $(basename "$cmd")" 2>/dev/null || true
+                exit 1
+            fi
+        fi
+        echo "Usage: wall-core {set [mode] <target>|stop-all|restore|state|toggle-song|toggle-mode|mode|variant}"; exit 1 ;;
+esac

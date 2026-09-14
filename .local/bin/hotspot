@@ -5,7 +5,7 @@
 IFACE=$(nmcli -t -f DEVICE,TYPE dev | grep -E ':wifi$' | cut -d: -f1 | head -n 1)
 
 if [ -z "$IFACE" ]; then
-    notify-send -u critical "Hotspot Error" "No WiFi interface found"
+    notify-send -a hotspot -u critical -h string:x-canonical-private-synchronous:hotspot "Hotspot" "No WiFi interface"
     exit 1
 fi
 
@@ -17,7 +17,7 @@ if ! nmcli connection show "Hotspot" >/dev/null 2>&1; then
 
     PASSWORD=$(fuzzel -d -p "Password (>=8 chars): " --password -w 40 < /dev/null)
     if [ ${#PASSWORD} -lt 8 ]; then
-        notify-send -u critical "Hotspot Error" "Password must be at least 8 characters"
+        notify-send -a hotspot -u critical -h string:x-canonical-private-synchronous:hotspot "Hotspot" "Password must be ≥8 chars"
         exit 1
     fi
 
@@ -25,25 +25,25 @@ if ! nmcli connection show "Hotspot" >/dev/null 2>&1; then
     if ! timeout 10 nmcli device wifi hotspot ifname "$IFACE" ssid "$SSID" password "$PASSWORD" band a channel 36 con-name "Hotspot" >/dev/null 2>&1; then
         # Fallback to default (2.4GHz) if 5GHz AP is unsupported or times out
         if ! nmcli device wifi hotspot ifname "$IFACE" ssid "$SSID" password "$PASSWORD" band bg con-name "Hotspot" >/dev/null 2>&1; then
-            notify-send -u critical "Hotspot Error" "Wi-Fi card refused to create the Access Point."
+            notify-send -a hotspot -u critical -h string:x-canonical-private-synchronous:hotspot "Hotspot" "AP creation failed"
             exit 1
         fi
     fi
 
     # Generate and display QR Code natively in Hyprland
     QR_TEXT="WIFI:S:$SSID;T:WPA;P:$PASSWORD;;"
-    qrencode -o /tmp/hotspot_qr.png -s 10 "$QR_TEXT"
-    notify-send "🔥 Hotspot Created & Started" "SSID: $SSID"
+    qrencode -o "${XDG_RUNTIME_DIR:-/tmp/user-$(id -u)}/hotspot_qr.png" -s 10 "$QR_TEXT"
+    notify-send -a hotspot -h string:x-canonical-private-synchronous:hotspot "Hotspot" "Started · $SSID"
 
-    hyprctl dispatch exec "[float; center; size 400 400] imv -s full /tmp/hotspot_qr.png"
-    sleep 1 && rm -f /tmp/hotspot_qr.png # Clean up sensitive file
+    hyprctl dispatch exec "[float; center; size 400 400] imv -s full "${XDG_RUNTIME_DIR:-/tmp/user-$(id -u)}/hotspot_qr.png""
+    sleep 1 && rm -f "${XDG_RUNTIME_DIR:-/tmp/user-$(id -u)}/hotspot_qr.png" # Clean up sensitive file
     exit 0
 fi
 
 # Toggle logic (catches both 'activating' and 'activated' states)
 if nmcli -t -f NAME,STATE con show --active | grep -Eq "^Hotspot:activat(ed|ing)$"; then
     nmcli connection down "Hotspot" >/dev/null 2>&1
-    notify-send "❄️ Hotspot Stopped" "WiFi is now free"
+    notify-send -a hotspot -h string:x-canonical-private-synchronous:hotspot "Hotspot" "Stopped"
 else
     if nmcli connection up "Hotspot" >/dev/null 2>&1; then
         # Fetch actual SSID and Password from connection profile
@@ -52,12 +52,12 @@ else
 
         # Generate and show QR Code
         QR_TEXT="WIFI:S:$SSID;T:WPA;P:$PASSWORD;;"
-        qrencode -o /tmp/hotspot_qr.png -s 10 "$QR_TEXT"
-        notify-send "🔥 Hotspot Started" "SSID: $SSID"
+        qrencode -o "${XDG_RUNTIME_DIR:-/tmp/user-$(id -u)}/hotspot_qr.png" -s 10 "$QR_TEXT"
+        notify-send -a hotspot -h string:x-canonical-private-synchronous:hotspot "Hotspot" "Started · $SSID"
 
-        hyprctl dispatch exec "[float; center; size 400 400] imv -s full /tmp/hotspot_qr.png"
-        sleep 1 && rm -f /tmp/hotspot_qr.png
+        hyprctl dispatch exec "[float; center; size 400 400] imv -s full "${XDG_RUNTIME_DIR:-/tmp/user-$(id -u)}/hotspot_qr.png""
+        sleep 1 && rm -f "${XDG_RUNTIME_DIR:-/tmp/user-$(id -u)}/hotspot_qr.png"
     else
-        notify-send -u critical "Hotspot Error" "Failed to start Hotspot"
+        notify-send -a hotspot -u critical -h string:x-canonical-private-synchronous:hotspot "Hotspot" "Failed to start"
     fi
 fi

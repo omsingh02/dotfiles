@@ -1,6 +1,6 @@
 #!/bin/sh
 # Author: Om Singh
-# Print dGPU power state (runtime status + PCI power state)
-
-cat /sys/bus/pci/devices/0000:01:00.0/power/runtime_status
-cat /sys/bus/pci/devices/0000:01:00.0/power_state
+# Print dGPU runtime power state without waking the device
+# Note: Reading deprecated 'power_state' triggers a PCI PMCSR read which forces D0.
+status=$(cat /sys/bus/pci/devices/0000:01:00.0/power/runtime_status 2>/dev/null || echo "unknown")
+echo "$status"

@@ -8,4 +8,4 @@ chars = string.ascii_letters + string.digits + '!@#\$%^&*_+-='
 print(''.join(secrets.choice(chars) for _ in range($LENGTH)))
 ")
 echo "$PASS" | wl-copy
-notify-send "🔑 Password Generated" "${LENGTH} chars → clipboard"
+notify-send -a passgen -h string:x-canonical-private-synchronous:passgen "Password" "${LENGTH} chars → clipboard"

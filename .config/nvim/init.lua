@@ -53,8 +53,8 @@ vim.opt.rtp:prepend(lazypath)
 -- PLUGINS
 -- =============================================================================
 require("lazy").setup({
-  -- Theme: wallust colors loaded from ~/.cache/wallust/colors-nvim.lua
-  -- No plugin needed — colorscheme lives in ~/.config/nvim/colors/wallust.lua
+  -- Theme: theme colors loaded from ~/.cache/theme/colors-nvim.lua
+  -- No plugin needed — colorscheme lives in ~/.config/nvim/colors/theme.lua
   { "catppuccin/nvim", name = "catppuccin", priority = 1000, opts = {
     flavour = "mocha",
     no_italic = true,
@@ -138,8 +138,44 @@ require("lazy").setup({
   -- Status line
   { "nvim-lualine/lualine.nvim", opts = { options = { theme = "auto" } } },
 
-  -- Comment toggling (gc)
-  { "numToStr/Comment.nvim", opts = {} },
+
+  -- Comment toggling (line: gcc/gc, block: gbc/gb)
+  {
+    "numToStr/Comment.nvim",
+    config = function()
+      local ft = require("Comment.ft")
+      local U = require("Comment.utils")
+
+      -- Neovim 0.11+ compatibility: get_parser returns nil without erroring
+      local orig_calculate = ft.calculate
+      ft.calculate = function(ctx)
+        local ok, parser = pcall(vim.treesitter.get_parser, 0)
+        if not ok or not parser then
+          return ft.get(vim.bo.filetype, ctx.ctype)
+        end
+        return orig_calculate(ctx)
+      end
+
+      -- Handle empty commentstring gracefully
+      local orig_unwrap = U.unwrap_cstr
+      U.unwrap_cstr = function(cstr)
+        if not cstr or cstr == "" then
+          error({ msg = "Option 'commentstring' is empty." })
+        end
+        return orig_unwrap(cstr)
+      end
+
+      -- Safe error catcher that handles raw Lua error strings
+      U.catch = function(fn, ...)
+        xpcall(fn, function(err)
+          local msg = type(err) == "table" and err.msg or tostring(err):gsub(".*:%d+: ", "")
+          vim.notify(string.format("[Comment.nvim] %s", msg), vim.log.levels.WARN)
+        end, ...)
+      end
+
+      require("Comment").setup()
+    end,
+  },
 
   -- Surround (cs, ds, ys)
   { "kylechui/nvim-surround", event = "VeryLazy", opts = {} },
@@ -154,7 +190,7 @@ require("lazy").setup({
 -- =============================================================================
 -- COLORSCHEME
 -- =============================================================================
-vim.cmd.colorscheme("wallust")
+vim.cmd.colorscheme("theme")
 
 -- =============================================================================
 -- LSP SETUP (Neovim 0.11 Native vim.lsp.config API)

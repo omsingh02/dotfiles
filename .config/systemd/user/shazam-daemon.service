@@ -1,0 +1,13 @@
+[Unit]
+Description=Shazam High-Performance Background Music Recognition Daemon
+After=pipewire.service wireplumber.service
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/shazam-daemon --waybar
+Restart=always
+RestartSec=2
+KillMode=process
+
+[Install]
+WantedBy=default.target

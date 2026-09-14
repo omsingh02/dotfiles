@@ -1,0 +1,13 @@
+[Unit]
+Description=Power State Monitor (Hyprland + Notifications)
+After=graphical-session.target
+Wants=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/power-daemon
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

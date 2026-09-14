@@ -1,0 +1,48 @@
+# Tag,Program,Description
+# Tag: empty = official pacman repo, A = AUR, G = Git
+,hyprland,Dynamic tiling Wayland compositor
+,hyprlock,Fast multi-threaded lockscreen for Hyprland
+,hypridle,Idle management daemon for Hyprland
+,xdg-desktop-portal-hyprland,XDG desktop portal backend for Hyprland
+,waybar,Highly customizable Wayland bar
+,mako,Lightweight notification daemon for Wayland
+,fuzzel,Application launcher for wlroots Wayland compositors
+,foot,Fast, lightweight, and minimalistic Wayland terminal emulator
+,pipewire,Low-latency audio and video server
+,wireplumber,Session / policy manager for PipeWire
+,pipewire-pulse,PulseAudio replacement daemon for PipeWire
+,playerctl,CLI and library for controlling MPRIS media players
+,networkmanager,Network management daemon
+,bluez,Bluetooth protocol stack
+,bluez-utils,Development and debugging utilities for BlueZ
+,blueman,GTK+ Bluetooth manager
+,grim,Grab images from a Wayland compositor
+,slurp,Select a region in a Wayland compositor
+,wl-clipboard,Command-line copy/paste utilities for Wayland
+,cliphist,Wayland clipboard history manager
+,imv,Command-line image viewer for Wayland and X11
+,mpv,Command line video player
+,ffmpeg,Complete cross-platform solution to record convert and stream audio and video
+,starship,The cross-shell prompt for astronauts
+,zoxide,A smarter cd command for your terminal
+,fzf,Command-line fuzzy finder
+,bat,Cat clone with syntax highlighting and Git integration
+,fd,Simple fast and user-friendly alternative to find
+,ripgrep,Fast line-oriented search tool
+,jq,Command-line JSON processor
+,bc,An arbitrary precision calculator language
+,brightnessctl,Lightweight brightness control tool
+,upower,Abstraction for enumerating power devices
+,udisks2,Disk management daemon
+,udiskie,Automounter for removable media
+,qrencode,C library and tool for encoding data in a QR Code
+,zbar,Bar code and QR code scanner and decoder
+,tesseract,OCR engine
+,neovim,Vim-fork focused on extensibility and usability
+,ttf-jetbrains-mono-nerd,Patched font JetBrains Mono from nerd fonts
+,noto-fonts-emoji,Google Noto Color Emoji
+A,awww,Animated wallpaper daemon with dynamic transitions
+A,gpu-screen-recorder,Very fast screen recorder with AMD/NVIDIA hardware acceleration
+A,hyprpicker,wlroots-compatible color picker
+A,python-materialyoucolor,Material Design 3 color utility for Python
+A,paru,Feature packed AUR helper and pacman wrapper

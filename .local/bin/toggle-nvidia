@@ -1,110 +1,63 @@
 #!/usr/bin/env bash
-# toggle-nvidia: Toggle NVIDIA GPU environment variables in hyprland configs
-# Adds or removes NVIDIA GPU support from both caelestia and personal configs
+# toggle-nvidia: Toggle NVIDIA GPU environment variables in Hyprland config
 # Usage: toggle-nvidia [on|off|status]
 #   No args = toggle between on/off
 
 set -euo pipefail
 
 # ── Paths ──
-PERSONAL_ENV="$HOME/.config/hypr-personal/conf/environment.conf"
-CAELESTIA_ENV="$HOME/dox/repos/hypr/caelestia/hypr/hyprland/env.conf"
+ENV_CONF="$HOME/.config/hypr/conf/environment.conf"
 
 # ── Helpers ──
 log() { echo "✓ $*"; }
 err() { echo "✗ ERROR: $*" >&2; }
 die() { err "$*"; exit 1; }
 
-# Check if NVIDIA vars are present in a file
+# Check if NVIDIA vars are present in config
 has_nvidia() {
     local file="$1"
     grep -q "LIBVA_DRIVER_NAME.*nvidia" "$file" 2>/dev/null || return 1
 }
 
-# Add NVIDIA vars to personal config
-add_nvidia_personal() {
-    if [[ ! -f "$PERSONAL_ENV" ]]; then
-        die "Personal config not found: $PERSONAL_ENV"
+# Add NVIDIA vars to config
+add_nvidia() {
+    if [[ ! -f "$ENV_CONF" ]]; then
+        die "Hyprland environment config not found: $ENV_CONF"
     fi
     
-    if has_nvidia "$PERSONAL_ENV"; then
-        log "NVIDIA vars already in personal config"
+    if has_nvidia "$ENV_CONF"; then
+        log "NVIDIA vars already in config"
         return 0
     fi
     
     # Add NVIDIA block at the beginning
     {
-        echo "# NVIDIA GPU — Enable NVIDIA rendering and acceleration"
-        echo "env = WLR_RENDERER,vulkan"
-        echo "env = WLR_RENDERER_ALLOW_SOFTWARE,0"
+        echo "# NVIDIA GPU — Hardware acceleration and offload"
         echo "env = LIBVA_DRIVER_NAME,nvidia"
         echo "env = VDPAU_DRIVER,nvidia"
         echo "env = __GLX_VENDOR_LIBRARY_NAME,nvidia"
         echo "env = NVD_BACKEND,direct"
         echo "env = __NV_PRIME_RENDER_OFFLOAD,1"
         echo ""
-        cat "$PERSONAL_ENV"
-    } > "$PERSONAL_ENV.tmp" && mv "$PERSONAL_ENV.tmp" "$PERSONAL_ENV"
-    log "Added NVIDIA vars to personal config"
+        cat "$ENV_CONF"
+    } > "$ENV_CONF.tmp" && mv "$ENV_CONF.tmp" "$ENV_CONF"
+    log "Added NVIDIA vars to config"
 }
 
-# Add NVIDIA vars to caelestia config
-add_nvidia_caelestia() {
-    if [[ ! -f "$CAELESTIA_ENV" ]]; then
-        die "Caelestia config not found: $CAELESTIA_ENV"
+# Remove NVIDIA vars from config
+remove_nvidia() {
+    if [[ ! -f "$ENV_CONF" ]]; then
+        die "Hyprland environment config not found: $ENV_CONF"
     fi
     
-    if has_nvidia "$CAELESTIA_ENV"; then
-        log "NVIDIA vars already in caelestia config"
+    if ! has_nvidia "$ENV_CONF"; then
+        log "NVIDIA vars not in config"
         return 0
     fi
     
-    # Add NVIDIA block at the beginning
-    {
-        echo "# ############# NVIDIA GPU #############"
-        echo "env = WLR_RENDERER, vulkan"
-        echo "env = WLR_RENDERER_ALLOW_SOFTWARE, 0"
-        echo "env = LIBVA_DRIVER_NAME, nvidia"
-        echo "env = VDPAU_DRIVER, nvidia"
-        echo "env = __GLX_VENDOR_LIBRARY_NAME, nvidia"
-        echo "env = NVD_BACKEND, direct"
-        echo "env = __NV_PRIME_RENDER_OFFLOAD, 1"
-        echo ""
-        cat "$CAELESTIA_ENV"
-    } > "$CAELESTIA_ENV.tmp" && mv "$CAELESTIA_ENV.tmp" "$CAELESTIA_ENV"
-    log "Added NVIDIA vars to caelestia config"
-}
-
-# Remove NVIDIA vars from personal config
-remove_nvidia_personal() {
-    if [[ ! -f "$PERSONAL_ENV" ]]; then
-        die "Personal config not found: $PERSONAL_ENV"
-    fi
-    
-    if ! has_nvidia "$PERSONAL_ENV"; then
-        log "NVIDIA vars not in personal config"
-        return 0
-    fi
-    
-    # Remove NVIDIA block and blank line after it (9 lines total: header + 7 vars + blank)
-    sed -i '/^# NVIDIA GPU.*Enable NVIDIA/,+8d' "$PERSONAL_ENV"
-    log "Removed NVIDIA vars from personal config"
-}
-
-# Remove NVIDIA vars from caelestia config
-remove_nvidia_caelestia() {
-    if [[ ! -f "$CAELESTIA_ENV" ]]; then
-        die "Caelestia config not found: $CAELESTIA_ENV"
-    fi
-    
-    if ! has_nvidia "$CAELESTIA_ENV"; then
-        log "NVIDIA vars not in caelestia config"
-        return 0
-    fi
-    
-    # Remove NVIDIA block and blank line after it (9 lines total: header + 7 vars + blank)
-    sed -i '/^# ############# NVIDIA GPU #############$/,+8d' "$CAELESTIA_ENV"
-    log "Removed NVIDIA vars from caelestia config"
+    # Remove NVIDIA block and blank line after it (7 lines total: header + 5 vars + blank)
+    sed -i '/^# NVIDIA GPU.*Hardware acceleration/,+6d' "$ENV_CONF"
+    log "Removed NVIDIA vars from config"
 }
 
 # Check status
@@ -112,16 +65,10 @@ status() {
     echo "NVIDIA GPU Environment Variables Status:"
     echo "========================================="
     
-    if has_nvidia "$PERSONAL_ENV"; then
-        echo "Personal:   [ON]"
+    if has_nvidia "$ENV_CONF"; then
+        echo "Status:   [ON]"
     else
-        echo "Personal:   [OFF]"
-    fi
-    
-    if has_nvidia "$CAELESTIA_ENV"; then
-        echo "Caelestia:  [ON]"
-    else
-        echo "Caelestia:  [OFF]"
+        echo "Status:   [OFF]"
     fi
 }
 
@@ -131,28 +78,26 @@ main() {
     
     case "$action" in
         on)
-            add_nvidia_personal
-            add_nvidia_caelestia
+            add_nvidia
             echo ""
             status
             echo ""
-            log "NVIDIA GPU support enabled in both configs"
-            log "Restart Hyprland to apply changes (Super+Alt+R or reboot)"
+            log "NVIDIA GPU support enabled"
+            log "Reload Hyprland or restart session to apply changes"
             ;;
         off)
-            remove_nvidia_personal
-            remove_nvidia_caelestia
+            remove_nvidia
             echo ""
             status
             echo ""
-            log "NVIDIA GPU support disabled in both configs"
-            log "Restart Hyprland to apply changes (Super+Alt+R or reboot)"
+            log "NVIDIA GPU support disabled"
+            log "Reload Hyprland or restart session to apply changes"
             ;;
         status)
             status
             ;;
         toggle)
-            if has_nvidia "$PERSONAL_ENV"; then
+            if has_nvidia "$ENV_CONF"; then
                 main off
             else
                 main on

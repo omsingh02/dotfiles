@@ -23,7 +23,7 @@ if [ $RES -ne 0 ] && echo "$OUTPUT" | grep -q 'Secrets were required'; then
 fi
 
 if [ $RES -eq 0 ]; then
-    notify-send "📶 Connected" "$SSID"
+    notify-send -a wifipick -h string:x-canonical-private-synchronous:wifipick "WiFi" "Connected to $SSID"
 else
-    notify-send -u critical "Connection Failed" "$SSID"
+    notify-send -a wifipick -u critical -h string:x-canonical-private-synchronous:wifipick "WiFi" "Failed · $SSID"
 fi

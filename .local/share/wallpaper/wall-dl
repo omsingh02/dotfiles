@@ -1,0 +1,400 @@
+#!/usr/bin/env python3
+"""
+wall-dl: Curated high-quality FHD/4K wallpaper downloader for Hyprland
+Downloads candidate wallpapers to a temporary directory, opens them in imv for
+interactive review & marking, saves chosen/applied wallpapers to ~/pix/walls/awww,
+and cleans up all unselected temporary files upon exit.
+"""
+
+import sys
+import os
+import re
+import json
+import shutil
+import tempfile
+import argparse
+import urllib.request
+import urllib.parse
+import subprocess
+from pathlib import Path
+
+PERM_DIR = Path(os.path.expanduser("~/pix/walls/awww"))
+PERM_DIR.mkdir(parents=True, exist_ok=True)
+
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+}
+
+def get_api_key():
+    val = os.environ.get("WALLPAPERCC") or os.environ.get("WALLHAVEN_API_KEY")
+    if val:
+        return val.strip("\"'")
+    sec = Path(os.path.expanduser("~/.config/.secrets"))
+    if sec.exists():
+        try:
+            with open(sec, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("#"):
+                        continue
+                    m = re.match(r'^(?:export\s+)?(?:WALLPAPERCC|WALLHAVEN_API_KEY)=["\']?([^"\']+)["\']?', line)
+                    if m:
+                        return m.group(1).strip()
+        except Exception:
+            pass
+    return None
+
+API_KEY = get_api_key()
+if API_KEY:
+    HEADERS["X-API-Key"] = API_KEY
+
+CURATED_PRESETS = {
+    "all-time": {
+        "url": "https://wallhaven.cc/api/v1/search?sorting=favorites&ratios=16x9&atleast=1920x1080&purity=100",
+        "desc": "All-time community favorites (Top masterpieces)"
+    },
+    "scenery": {
+        "url": "https://wallhaven.cc/api/v1/search?q=nature+mountains+lake&sorting=favorites&ratios=16x9&atleast=1920x1080&purity=100",
+        "desc": "Pristine nature, alpine lakes, mountain landscapes"
+    },
+    "cyberpunk": {
+        "url": "https://wallhaven.cc/api/v1/search?q=cyberpunk+city&sorting=favorites&ratios=16x9&atleast=1920x1080&purity=100",
+        "desc": "Moody neon-lit cyberpunk cityscapes & rainy streets"
+    },
+    "space": {
+        "url": "https://wallhaven.cc/api/v1/search?q=space+nebula+stars&sorting=favorites&ratios=16x9&atleast=1920x1080&purity=100",
+        "desc": "Deep space nebulae, cosmic dust, and orbital vistas"
+    },
+    "aenami": {
+        "url": "https://wallhaven.cc/api/v1/search?q=Aenami&sorting=favorites&ratios=16x9&purity=100",
+        "desc": "Atmospheric romantic sunset & rooftop art by Alena Aenami"
+    },
+    "minimal": {
+        "url": "https://wallhaven.cc/api/v1/search?q=dark+minimalism+digital+art&sorting=favorites&ratios=16x9&atleast=1920x1080&purity=100",
+        "desc": "Dark minimal digital art & clean silhouettes"
+    },
+    "pixel": {
+        "url": "https://wallhaven.cc/api/v1/search?q=pixel+art+city&sorting=favorites&ratios=16x9&atleast=1920x1080&purity=100",
+        "desc": "Detailed atmospheric pixel art scenery"
+    }
+}
+
+def notify(title, msg, icon=None, urgency="normal"):
+    cmd = ["notify-send", "-a", "wall-dl", "-u", urgency, title, msg]
+    if icon and os.path.isfile(icon):
+        cmd.extend(["-i", icon])
+    try:
+        subprocess.run(cmd, check=False)
+    except Exception:
+        pass
+
+def fetch_json(url):
+    if API_KEY:
+        sep = "&" if "?" in url else "?"
+        if "apikey=" not in url:
+            url = f"{url}{sep}apikey={API_KEY}"
+    req = urllib.request.Request(url, headers=HEADERS)
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+def download_file(url, target_path):
+    req = urllib.request.Request(url, headers=HEADERS)
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        content = resp.read()
+        with open(target_path, "wb") as f:
+            f.write(content)
+    return target_path
+
+def search_wallpapers(query=None, preset=None, count=10, min_favs=50):
+    if preset and preset in CURATED_PRESETS:
+        url = CURATED_PRESETS[preset]["url"]
+    elif query:
+        q_encoded = urllib.parse.quote_plus(query)
+        url = f"https://wallhaven.cc/api/v1/search?q={q_encoded}&sorting=toplist&topRange=1y&ratios=16x9&atleast=1920x1080&purity=100"
+    else:
+        url = CURATED_PRESETS["all-time"]["url"]
+
+    data = fetch_json(url)
+    results = []
+    for item in data.get("data", []):
+        favs = item.get("favorites", 0)
+        if favs < min_favs and preset != "aenami":
+            continue
+        results.append(item)
+        if len(results) >= count:
+            break
+    return results
+
+def download_candidates_to_temp(items, temp_dir):
+    downloaded = []
+    print(f"Downloading {len(items)} candidates to temporary preview directory...")
+    notify("Wallpaper Preview", f"Downloading {len(items)} candidate wallpapers for review...")
+
+    for idx, item in enumerate(items, 1):
+        iid = item["id"]
+        res = item.get("resolution", "FHD")
+        file_url = item["path"]
+        ext = os.path.splitext(file_url)[1] or ".jpg"
+        filename = f"wallhaven-{iid}_{res}{ext}"
+        filepath = temp_dir / filename
+
+        print(f"[{idx}/{len(items)}] {filename} ({res}, {item.get('favorites', 0)} favorites)...")
+        try:
+            download_file(file_url, filepath)
+            downloaded.append(filepath)
+        except Exception as e:
+            print(f"   -> Failed: {e}", file=sys.stderr)
+
+    return downloaded
+
+def run_imv_review(temp_dir, image_paths):
+    """
+    Spawns imv configured specifically for previewing, marking, and setting wallpapers.
+    """
+    kept_file = temp_dir / "kept.txt"
+    applied_file = temp_dir / "applied.txt"
+    action_sh = temp_dir / "action.sh"
+    imv_ini = temp_dir / "imv.ini"
+
+    # 1. Generate helper script for imv actions
+    action_content = f"""#!/usr/bin/env bash
+ACTION="$1"
+FILE="$2"
+AWWW_DIR="{PERM_DIR}"
+mkdir -p "$AWWW_DIR"
+[[ -z "$FILE" || ! -f "$FILE" ]] && exit 0
+
+NAME="$(basename "$FILE")"
+DEST="$AWWW_DIR/$NAME"
+
+case "$ACTION" in
+    mark)
+        cp -n "$FILE" "$DEST"
+        echo "$DEST" >> "{kept_file}"
+        notify-send -a "Wallpaper" -i "$DEST" "Saved to awww" "$NAME"
+        ;;
+    apply)
+        cp -n "$FILE" "$DEST"
+        echo "$DEST" >> "{kept_file}"
+        echo "$DEST" > "{applied_file}"
+        "$SCRIPT_DIR/wall-core" set awww "$DEST"
+        notify-send -a "Wallpaper" -i "$DEST" "Wallpaper Applied & Saved" "$NAME"
+        ;;
+esac
+"""
+    with open(action_sh, "w") as f:
+        f.write(action_content)
+    action_sh.chmod(0o755)
+
+    # 2. Generate isolated imv config
+    imv_config_content = f"""[options]
+background = 111111
+overlay = true
+overlay_font = Inter:13
+overlay_text_color = ffffff
+overlay_background_color = 000000
+overlay_background_alpha = d0
+overlay_position_bottom = true
+overlay_text = [${{imv_current_index}}/${{imv_file_count}}] ${{imv_width}}x${{imv_height}} | [m] Keep/Save to awww | [Ctrl+t / w] Set as Wallpaper | [x] Discard | [q] Finish
+title_text = Wallpaper Review [${{imv_current_index}}/${{imv_file_count}}] - ${{imv_current_file}}
+upscaling_method = linear
+
+[aliases]
+q = quit
+
+[binds]
+m = exec "{action_sh}" mark "$imv_current_file" &
+w = exec "{action_sh}" apply "$imv_current_file" &
+<Ctrl+t> = exec "{action_sh}" apply "$imv_current_file" &
+x = close
+q = quit
+"""
+    with open(imv_ini, "w") as f:
+        f.write(imv_config_content)
+
+    print("\nOpening images in imv preview mode...")
+    print("---------------------------------------------------------------")
+    print("  [n] / [p] / Arrows : Navigate through candidate wallpapers")
+    print("  [m]                : Mark & Save current wallpaper to awww")
+    print("  [w] or [Ctrl+T]    : Set as current wallpaper (and keep it)")
+    print("  [x]                : Discard / skip current image")
+    print("  [q]                : Finish review & clear unkept temp files")
+    print("---------------------------------------------------------------\n")
+
+    env = os.environ.copy()
+    env["imv_config"] = str(imv_ini)
+
+    imv_cmd = ["imv", "-d"] + [str(p) for p in image_paths]
+    subprocess.run(imv_cmd, env=env, check=False)
+
+    # Collect results
+    kept_list = []
+    if kept_file.exists():
+        with open(kept_file, "r") as f:
+            kept_list = list(dict.fromkeys(line.strip() for line in f if line.strip()))
+
+    applied_wall = None
+    if applied_file.exists():
+        with open(applied_file, "r") as f:
+            lines = [line.strip() for line in f if line.strip()]
+            if lines:
+                applied_wall = lines[-1]
+
+    return kept_list, applied_wall
+
+def run_nsxiv_review(temp_dir, image_paths):
+    """
+    Alternative thumbnail-grid review using nsxiv.
+    """
+    print("\nOpening thumbnail grid in nsxiv...")
+    print("Use [m] to mark images, [q] to save marked to awww and exit.\n")
+    proc = subprocess.run(["nsxiv", "-t", "-o"] + [str(p) for p in image_paths], capture_output=True, text=True)
+    selected = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+
+    kept_list = []
+    for src in selected:
+        src_path = Path(src)
+        if src_path.exists():
+            dest = PERM_DIR / src_path.name
+            shutil.copy2(src_path, dest)
+            kept_list.append(str(dest))
+
+    return kept_list, None
+
+def prompt_user_fuzzel():
+    """
+    Fuzzel interactive menu for selecting preset or typing custom search.
+    """
+    options = [f"🌟 {k.capitalize()}: {v['desc']}" for k, v in CURATED_PRESETS.items()]
+    options.append("🔍 Custom Search: Enter your own search query...")
+
+    proc = subprocess.run(
+        ["fuzzel", "--dmenu", "-l", str(len(options)), "-p", "Wallpapers: "],
+        input="\n".join(options),
+        capture_output=True,
+        text=True
+    )
+    choice = proc.stdout.strip()
+    if not choice:
+        return None, None
+
+    if "Custom Search" in choice:
+        prompt_proc = subprocess.run(
+            ["fuzzel", "--dmenu", "-l", "0", "-p", "Search Wallhaven: "],
+            input="",
+            capture_output=True,
+            text=True
+        )
+        query = prompt_proc.stdout.strip()
+        if not query:
+            return None, None
+        return query, None
+    else:
+        # Extract preset key (strip leading icon)
+        raw_key = choice.split(":")[0].strip()
+        clean_key = re.sub(r'^[^\w]+', '', raw_key).strip().lower()
+        return None, clean_key
+
+def main():
+    parser = argparse.ArgumentParser(description="Curated high-quality wallpaper downloader with imv preview & marking")
+    parser.add_argument("query", nargs="?", help="Search query (e.g. 'cyberpunk', 'lake', 'aenami')")
+    parser.add_argument("-p", "--preset", choices=list(CURATED_PRESETS.keys()), help="Download from curated aesthetic preset")
+    parser.add_argument("-c", "--count", type=int, default=8, help="Number of candidate wallpapers to preview (default: 8)")
+    parser.add_argument("-m", "--menu", action="store_true", help="Open interactive Fuzzel menu for category/search")
+    parser.add_argument("--grid", action="store_true", help="Use nsxiv thumbnail grid mode instead of imv full preview")
+    parser.add_argument("--list-presets", action="store_true", help="List available presets")
+
+    args = parser.parse_args()
+
+    if args.list_presets:
+        print("Available Curated Presets:")
+        for k, v in CURATED_PRESETS.items():
+            print(f"  {k:10} - {v['desc']}")
+        return
+
+    query = args.query
+    preset = args.preset
+
+    # If menu requested or no args provided from graphical launch
+    if args.menu or (not query and not preset and not sys.stdin.isatty()):
+        query, preset = prompt_user_fuzzel()
+        if not query and not preset:
+            print("Cancelled.")
+            return
+    elif not query and not preset:
+        # Running interactively in terminal without arguments: prompt user
+        print("Choose a category or enter a search query:")
+        for idx, (k, v) in enumerate(CURATED_PRESETS.items(), 1):
+            print(f"  [{idx}] {k.capitalize():10} - {v['desc']}")
+        print("  [0] Custom search query")
+
+        try:
+            ans = input("\nSelect option [0-7] (default: 1): ").strip() or "1"
+            if ans == "0":
+                query = input("Enter search query: ").strip()
+                if not query:
+                    print("Cancelled.")
+                    return
+            else:
+                idx = int(ans) - 1
+                keys = list(CURATED_PRESETS.keys())
+                if 0 <= idx < len(keys):
+                    preset = keys[idx]
+                else:
+                    preset = "all-time"
+        except (ValueError, KeyboardInterrupt, EOFError):
+            print("\nCancelled.")
+            return
+
+    auth_status = "Authenticated" if API_KEY else "Anonymous"
+    print(f"Searching Wallhaven ({auth_status})...")
+    items = search_wallpapers(query=query, preset=preset, count=args.count)
+
+    if not items:
+        notify("Wallpaper Downloader", "No high quality wallpapers found matching query", urgency="low")
+        print("No wallpapers found matching criteria.")
+        return
+
+    # Create temporary directory for preview session
+    temp_dir = Path(tempfile.mkdtemp(prefix="wall-preview-"))
+    try:
+        downloaded = download_candidates_to_temp(items, temp_dir)
+        if not downloaded:
+            print("Failed to download any preview candidates.")
+            return
+
+        # Open in reviewer
+        if args.grid:
+            kept, applied = run_nsxiv_review(temp_dir, downloaded)
+        else:
+            kept, applied = run_imv_review(temp_dir, downloaded)
+
+        # Summary reporting
+        total_kept = len(kept)
+        cleared_count = len(downloaded) - total_kept
+        if cleared_count < 0:
+            cleared_count = 0
+
+        summary_msg = []
+        if applied:
+            summary_msg.append(f"🎨 Active Wallpaper: {Path(applied).name}")
+        if total_kept > 0:
+            summary_msg.append(f"📁 Kept in awww: {total_kept} wallpaper(s)")
+        summary_msg.append(f"🧹 Cleared {cleared_count} unselected temporary preview(s)")
+
+        full_summary = "\n".join(summary_msg)
+        print("\n" + "="*50)
+        print("Review Complete:")
+        print(full_summary)
+        print("="*50)
+
+        notify("Wallpaper Downloader", full_summary, icon=applied or (kept[0] if kept else None))
+
+    finally:
+        # Guarantee cleanup of all temporary preview files
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            print(f"Temporary preview directory {temp_dir.name} cleaned up.")
+
+if __name__ == "__main__":
+    main()

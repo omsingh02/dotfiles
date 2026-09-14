@@ -8,3 +8,7 @@ export ANTHROPIC_DEFAULT_SONNET_MODEL="devstral-small-2:24b"
 export ANTHROPIC_DEFAULT_HAIKU_MODEL="devstral-small-2:24b"
 export CLAUDE_CODE_SUBAGENT_MODEL="devstral-small-2:24b"
 export CLAUDE_CODE_ATTRIBUTION_HEADER="0"
+
+
+# Added by Antigravity CLI installer
+export PATH="$HOME/.local/bin:$PATH"

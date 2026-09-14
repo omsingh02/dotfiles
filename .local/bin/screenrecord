@@ -15,8 +15,9 @@
 set -euo pipefail
 
 RECORDER="gpu-screen-recorder"
-OUTDIR="$HOME/vids/sr"
-PIDFILE="/tmp/screenrecord.pid"
+OUTDIR="${RECORDING_DIR:-$(xdg-user-dir VIDEOS 2>/dev/null || echo "$HOME/Videos")/Recordings}"
+STATE_DIR="${XDG_RUNTIME_DIR:-/tmp/user-$(id -u)}"
+PIDFILE="$STATE_DIR/screenrecord.pid"
 CONFIG_DIR="$HOME/.config/screenrecord"
 AUDIO_FILE="$CONFIG_DIR/audio"
 
@@ -107,11 +108,11 @@ start_recording() {
     # Check if it started successfully
     sleep 0.5
     if is_running; then
-        notify-send -i media-record "Recording Started" "Audio: $src | $(basename "$filename")"
+        notify-send -a screenrecord -h string:x-canonical-private-synchronous:screenrecord -i media-record "Recording" "$(basename "$filename")"
         pkill -RTMIN+13 waybar 2>/dev/null || true
     else
         rm -f "$PIDFILE"
-        notify-send -u critical -i dialog-error "Recording Failed" "gpu-screen-recorder failed to start"
+        notify-send -a screenrecord -u critical "Recording" "Failed to start"
     fi
 }
 
@@ -134,7 +135,7 @@ stop_recording() {
         local latest
         latest=$(ls -t "$OUTDIR"/rec-*.mp4 2>/dev/null | head -1)
         if [ -n "$latest" ]; then
-            notify-send -i media-playback-stop "Recording Saved" "$(basename "$latest") in ~/vids/"
+            notify-send -a screenrecord -h string:x-canonical-private-synchronous:screenrecord "Recording Saved" "$(basename "$latest")"
         fi
         pkill -RTMIN+13 waybar 2>/dev/null || true
     fi
@@ -161,7 +162,7 @@ case "${1:-}" in
     pause)
         if is_running; then
             pkill -USR2 -f "$RECORDER" 2>/dev/null
-            notify-send -i media-playback-pause "Recording" "Paused/Resumed"
+            notify-send -a screenrecord -h string:x-canonical-private-synchronous:screenrecord "Recording" "Paused/Resumed"
         fi
         ;;
     audio)
@@ -174,7 +175,7 @@ case "${1:-}" in
             [ -z "$src" ] && exit 0
         fi
         echo "$src" > "$AUDIO_FILE"
-        notify-send -i audio-card "Screen Recording" "Audio source set to: $src"
+        notify-send -a screenrecord -h string:x-canonical-private-synchronous:screenrecord "Recording" "Audio: $src"
         ;;
     status)
         # Waybar JSON output

@@ -1,0 +1,7 @@
+[Unit]
+Description=Clean old downloaded WhatsApp Reels (7+ days opened)
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/wa-reel-cleanup --days 7

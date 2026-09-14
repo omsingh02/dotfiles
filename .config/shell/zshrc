@@ -47,6 +47,7 @@ preexec() { echo -ne '\e[5 q'; }
 # 4. Completions (dump file in XDG_CACHE_HOME)
 _zsh_cache="${XDG_CACHE_HOME:-$HOME/.cache}/zsh"
 [[ -d "$_zsh_cache" ]] || mkdir -p "$_zsh_cache"
+zmodload zsh/complist
 autoload -Uz compinit && compinit -d "$_zsh_cache/zcompdump"
 zstyle ':completion:*' menu select
 _comp_options+=(globdots)            # Include dotfiles in completion
@@ -68,8 +69,12 @@ bindkey '^e' edit-command-line
 bindkey -M vicmd '^e' edit-command-line
 
 # 5. Prompt
-autoload -U colors && colors
-PS1="%B%{$fg[red]%}[%{$fg[yellow]%}%n%{$fg[green]%}@%{$fg[blue]%}%M %{$fg[magenta]%}%~%{$fg[red]%}]%{$reset_color%}$%b "
+if command -v starship >/dev/null 2>&1; then
+    eval "$(starship init zsh)"
+else
+    autoload -U colors && colors
+    PS1="%B%{$fg[red]%}[%{$fg[yellow]%}%n%{$fg[green]%}@%{$fg[blue]%}%M %{$fg[magenta]%}%~%{$fg[red]%}]%{$reset_color%}$%b "
+fi
 
 # 6. Plugins (repos cloned to $XDG_DATA_HOME/zsh/plugins)
 ZSH_PLUGIN_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/zsh/plugins"

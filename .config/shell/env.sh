@@ -55,5 +55,18 @@ export LESS_TERMCAP_us="$(printf '%b' '[1;32m')"
 export LESS_TERMCAP_ue="$(printf '%b' '[0m')"
 export LESSOPEN="| /usr/bin/highlight -O ansi %s 2>/dev/null"
 
+# Qt / QML paths
+export QML2_IMPORT_PATH="$HOME/.local/lib/qt6/qml:$QML2_IMPORT_PATH"
+export QML_IMPORT_PATH="$HOME/.local/lib/qt6/qml:$QML_IMPORT_PATH"
+
+# OpenHorizon — Claude Code environment
+export ANTHROPIC_BASE_URL="https://api.openhorizon.devwtf.in"
+export ANTHROPIC_API_KEY=""
+export ANTHROPIC_DEFAULT_OPUS_MODEL="devstral-small-2:24b"
+export ANTHROPIC_DEFAULT_SONNET_MODEL="devstral-small-2:24b"
+export ANTHROPIC_DEFAULT_HAIKU_MODEL="devstral-small-2:24b"
+export CLAUDE_CODE_SUBAGENT_MODEL="devstral-small-2:24b"
+export CLAUDE_CODE_ATTRIBUTION_HEADER="0"
+
 # API keys (kept out of dotfiles)
 [ -f "$XDG_CONFIG_HOME/.secrets" ] && source "$XDG_CONFIG_HOME/.secrets"

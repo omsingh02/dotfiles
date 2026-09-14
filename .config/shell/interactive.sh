@@ -27,6 +27,6 @@ fi
 [ -f ~/.cache/theme/colors.sh ] && source ~/.cache/theme/colors.sh
 
 # Greeting
-pokemon-colorscripts -r
+command -v pokemon-colorscripts &>/dev/null && pokemon-colorscripts -r
 
 true

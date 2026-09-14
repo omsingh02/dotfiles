@@ -59,3 +59,5 @@ A,paru,Feature packed AUR helper and pacman wrapper
 ,highlight,Fast and flexible source code highlighter
 ,bind,DNS utilities including dig for network inspection
 ,libnotify,Library for sending desktop notifications
+,python-pillow,Python Imaging Library fork
+A,pokemon-colorscripts-git,CLI utility to print out images of pokemon in terminal

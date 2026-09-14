@@ -47,3 +47,15 @@ A,gpu-screen-recorder,Very fast screen recorder with AMD/NVIDIA hardware acceler
 A,hyprpicker,wlroots-compatible color picker
 A,python-materialyoucolor,Material Design 3 color utility for Python
 A,paru,Feature packed AUR helper and pacman wrapper
+,lf,Terminal file manager inspired by ranger
+,cava,Console-based Audio Visualizer for ALSA and PulseAudio
+,fastfetch,Neofetch-like tool for fetching system information
+,zathura,Highly customizable and functional document viewer
+,zathura-pdf-mupdf,PDF support for Zathura via MuPDF
+,mpd,Flexible powerful server for playing music
+,ncmpcpp,Featureful ncurses based MPD client
+,yt-dlp,A feature-rich command-line audio/video downloader
+,entr,Run arbitrary commands when files change
+,highlight,Fast and flexible source code highlighter
+,bind,DNS utilities including dig for network inspection
+,libnotify,Library for sending desktop notifications

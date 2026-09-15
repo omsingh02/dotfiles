@@ -137,10 +137,10 @@ fi
 
 # 10. Sync gsettings based on active theme mode
 if [[ "$ACTIVE_MODE" == "light" ]]; then
-    gsettings set org.gnome.desktop.interface gtk-theme 'Adwaita' 2>/dev/null || true
+    gsettings set org.gnome.desktop.interface gtk-theme 'adw-gtk3' 2>/dev/null || true
     gsettings set org.gnome.desktop.interface color-scheme 'prefer-light' 2>/dev/null || true
 else
-    gsettings set org.gnome.desktop.interface gtk-theme 'Adwaita-dark' 2>/dev/null || true
+    gsettings set org.gnome.desktop.interface gtk-theme 'adw-gtk3-dark' 2>/dev/null || true
     gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark' 2>/dev/null || true
 fi
 

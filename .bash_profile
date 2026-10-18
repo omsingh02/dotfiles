@@ -1,8 +1,3 @@
-# ~/.bash_profile
-if [ -f ~/.bashrc ]; then
-    source ~/.bashrc
-fi
-
-
-# Added by Antigravity CLI installer
-export PATH="$HOME/.local/bin:$PATH"
+# ~/.bash_profile: the login hook (environment, Hyprland on tty1), then the interactive setup
+[ -f ~/.config/shell/profile ] && . ~/.config/shell/profile
+[ -f ~/.bashrc ] && . ~/.bashrc

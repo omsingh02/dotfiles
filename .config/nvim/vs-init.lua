@@ -83,7 +83,7 @@ vim.api.nvim_create_autocmd("TextYankPost", {
 -- =============================================================================
 -- ONE-SHOT COMPILE & RUN (C / C++)
 -- =============================================================================
-vim.keymap.set("n", "<leader>r", function()
+vim.keymap.set("n", "<leader>rr", function()
     local vscode = require('vscode')
 
     -- 1. Force save the current file so you don't compile old code

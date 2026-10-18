@@ -1,6 +1,10 @@
 background-color={{background}}
 text-color={{foreground}}
-border-color={{color5}}
+border-color={{primary}}
+progress-color=over {{primary}}
 
 [urgency=high]
-border-color={{color1}}
+border-color={{error}}
+
+[urgency=low]
+border-color={{surfaceContainer}}

@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Color Picker [Super+X]
-Comment=Pick screen color in HEX and RGB
-Exec=colorpick
-Icon=color-select
-Terminal=false
-Categories=Graphics;Utility;
-Keywords=color;picker;hex;rgb;eyedropper;

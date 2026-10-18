@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Wi-Fi Hotspot Toggle [Super+F4]
-Comment=Toggle wireless hotspot sharing
-Exec=hotspot
-Icon=network-wireless
-Terminal=false
-Categories=Settings;Network;
-Keywords=hotspot;tether;share;wifi;f4;

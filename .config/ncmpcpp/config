@@ -80,9 +80,3 @@ statusbar_time_color = "cyan:b"
 volume_color = "magenta"
 state_line_color = "yellow"
 state_flags_color = "red"
-
-# ------------------------------------------------------------------------------
-# Hooks
-# ------------------------------------------------------------------------------
-# execute_on_song_change = "~/.local/bin/mediactl notify"
-execute_on_player_state_change = "pkill -RTMIN+11 waybar"

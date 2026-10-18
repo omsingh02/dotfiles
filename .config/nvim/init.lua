@@ -62,28 +62,26 @@ require("lazy").setup({
 
   -- Treesitter: better syntax highlighting
   { "nvim-treesitter/nvim-treesitter",
+    branch = "main",
+    lazy = false,
     build = ":TSUpdate",
     config = function()
-      -- nvim-treesitter API: use the module directly (treesitter.configs was removed)
-      local ok, ts = pcall(require, "nvim-treesitter.configs")
-      if not ok then
-        ts = require("nvim-treesitter")
-      end
-      ts.setup({
-        ensure_installed = { "c", "cpp", "java", "python", "lua", "bash", "json", "yaml", "markdown", "sql" },
-        highlight = { enable = true },
-        indent = { enable = true },
+      -- The plugin only installs and updates parsers (by hand, see lua/config/parsers.lua); Neovim does the highlighting.
+      require("nvim-treesitter").setup({})
+      vim.api.nvim_create_autocmd("FileType", {
+        callback = function(ev)
+          -- fails quietly where there is no parser for the file type (yet)
+          if pcall(vim.treesitter.start, ev.buf) then
+            vim.bo[ev.buf].indentexpr = "v:lua.require'nvim-treesitter'.indentexpr()"
+          end
+        end,
       })
     end,
   },
 
-  -- LSP Configuration & Mason
+  -- LSP configuration. The language servers are packages (clang, lua-language-server, python-lsp-server, jdtls, sqls), not
+  -- downloads of the editor: they are updated with the system and need no plugin.
   { "neovim/nvim-lspconfig" },
-  { "williamboman/mason.nvim", opts = {} },
-  { "williamboman/mason-lspconfig.nvim", opts = {
-    ensure_installed = { "clangd", "pylsp", "jdtls", "lua_ls", "sqls" },
-    automatic_installation = true,
-  }},
 
   -- Completion
   { "hrsh7th/nvim-cmp", dependencies = {
@@ -180,8 +178,8 @@ require("lazy").setup({
   -- Surround (cs, ds, ys)
   { "kylechui/nvim-surround", event = "VeryLazy", opts = {} },
 
-  -- Inline color preview
-  { "norcalli/nvim-colorizer.lua", opts = {} },
+  -- Inline color preview (the maintained fork of norcalli's, which calls functions Neovim 0.13 removes)
+  { "catgoose/nvim-colorizer.lua", opts = {} },
 
 }, { performance = { rtp = { disabled_plugins = {
   "gzip", "tarPlugin", "zipPlugin", "tohtml", "tutor", "netrwPlugin"
@@ -195,12 +193,6 @@ vim.cmd.colorscheme("theme")
 -- =============================================================================
 -- LSP SETUP (Neovim 0.11 Native vim.lsp.config API)
 -- =============================================================================
--- Ensure Mason bin is always on PATH for LSP executables
-local mason_bin = vim.fn.stdpath("data") .. "/mason/bin"
-if not vim.env.PATH:find(mason_bin, 1, true) then
-  vim.env.PATH = mason_bin .. ":" .. vim.env.PATH
-end
-
 local cmp_caps = require("cmp_nvim_lsp").default_capabilities()
 
 -- Apply completion capabilities to all LSPs
@@ -212,6 +204,7 @@ vim.lsp.config("*", {
 vim.lsp.config("clangd", {
   cmd = {
     "clangd",
+    "--log=error", -- Neovim logs a server's stderr as errors; clangd's progress lines made lsp.log 13 MB
     "--background-index",
     "--clang-tidy",
     "--header-insertion=iwyu",
@@ -249,6 +242,13 @@ vim.lsp.enable({ "clangd", "jdtls", "pylsp", "lua_ls", "sqls" })
 -- =============================================================================
 -- LSP KEYMAPS (applied when an LSP attaches to a buffer)
 -- =============================================================================
+-- Jump to the next (1) or previous (-1) diagnostic and show it in a float, as the removed goto_next / goto_prev did
+local function jump_diagnostic(count)
+  vim.diagnostic.jump({ count = count, on_jump = function(_, bufnr)
+    vim.diagnostic.open_float({ bufnr = bufnr, scope = "cursor", focus = false })
+  end })
+end
+
 vim.api.nvim_create_autocmd("LspAttach", {
   callback = function(ev)
     local map = function(mode, lhs, rhs, desc)
@@ -260,8 +260,8 @@ vim.api.nvim_create_autocmd("LspAttach", {
     map("n", "<leader>rn", vim.lsp.buf.rename, "Rename symbol")
     map("n", "<leader>ca", vim.lsp.buf.code_action, "Code action")
     map("n", "<leader>e", vim.diagnostic.open_float, "Show diagnostic")
-    map("n", "[d", vim.diagnostic.goto_prev, "Prev diagnostic")
-    map("n", "]d", vim.diagnostic.goto_next, "Next diagnostic")
+    map("n", "[d", function() jump_diagnostic(-1) end, "Prev diagnostic")
+    map("n", "]d", function() jump_diagnostic(1) end, "Next diagnostic")
     map("i", "<C-h>", vim.lsp.buf.signature_help, "Signature help")
   end,
 })
@@ -317,7 +317,7 @@ vim.keymap.set("n", "N", "Nzzzv")
 
 -- Brief highlight on yank (visual feedback)
 vim.api.nvim_create_autocmd("TextYankPost", {
-  callback = function() vim.highlight.on_yank({ timeout = 40 }) end,
+  callback = function() vim.hl.on_yank({ timeout = 40 }) end,
 })
 
 -- Strip trailing whitespace on save (cursor preserved)
@@ -344,7 +344,7 @@ require("config.snippets")
 local runner = require("config.runner")
 
 -- Code Execution & DSA Runner
-vim.keymap.set("n", "<leader>r", runner.run_code, { desc = "Run code in split terminal" })
+vim.keymap.set("n", "<leader>rr", runner.run_code, { desc = "Run code in split terminal" })
 vim.keymap.set("n", "<leader>rc", runner.run_code, { desc = "Run code in split terminal" })
 vim.keymap.set("n", "<leader>ri", runner.run_with_input, { desc = "Run with input.txt" })
 vim.keymap.set("n", "<leader>mq", function() runner.run_sql_query(false) end, { desc = "Execute SQL query" })

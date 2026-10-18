@@ -1,5 +1,5 @@
-/* Theme Colors */
-@import "../../.cache/theme/colors-waybar.css";
+/* Theme Colors: an absolute path, so that the import resolves whether waybar is given this file or the link to it */
+@import "/home/faulter/.cache/theme/colors-waybar.css";
 
 * {
     font-family: "JetBrainsMono Nerd Font", monospace;
@@ -30,7 +30,6 @@ window#waybar {
  * Creates a beautiful subtle bubble behind every module
  */
 #workspaces,
-#window,
 #clock,
 #wireplumber,
 #network,
@@ -39,11 +38,13 @@ window#waybar {
 #tray,
 #custom-updates,
 #custom-media,
+#custom-privacy,
 #custom-recording,
-#custom-shazam,
+#custom-timebox,
+#custom-awake,
+#custom-hark,
 #custom-themetoggle,
-#custom-dnd,
-#custom-weather {
+#custom-dnd {
     padding: 2px 8px;
     margin: 0px 4px;
     border-radius: 0;
@@ -60,9 +61,8 @@ window#waybar {
 #battery:hover,
 #custom-updates:hover,
 #custom-media:hover,
-#custom-shazam:hover,
-#custom-themetoggle:hover,
-#custom-weather:hover {
+#custom-hark:hover,
+#custom-themetoggle:hover {
     background-color: transparent;
     box-shadow: none;
 }
@@ -104,8 +104,8 @@ window#waybar {
     color: @foreground;
 }
 
-/* Visually fuse Shazam and Media into a single integrated block */
-#custom-shazam {
+/* Visually fuse hark and Media into a single integrated block */
+#custom-hark {
     margin-right: 0px;
     padding-right: 6px;
     border-left: 1px dashed alpha(@foreground, 0.3);
@@ -114,6 +114,27 @@ window#waybar {
 #custom-media {
     margin-left: 0px;
     padding-left: 6px;
+}
+
+/* What hark is doing: listening, found a song, paused, offline, throttled */
+#custom-hark.paused {
+    opacity: 0.5;
+}
+
+#custom-hark.ambient {
+    color: @color4;
+}
+
+#custom-hark.found {
+    color: @color2;
+}
+
+#custom-hark.offline {
+    color: @color1;
+}
+
+#custom-hark.ratelimited {
+    color: @color3;
 }
 
 #custom-themetoggle.enabled {
@@ -125,16 +146,48 @@ window#waybar {
     opacity: 0.6;
 }
 
+#custom-awake.awake {
+    color: @color3;
+}
+
+/* Timers and alarms: the soonest one is the text; the last minute and the last seconds change colour; a ring blinks */
+#custom-timebox.paused {
+    opacity: 0.6;
+}
+
+#custom-timebox.alarm {
+    color: @color4;
+}
+
+#custom-timebox.warning {
+    color: @color3;
+}
+
+#custom-timebox.urgent {
+    color: @color1;
+}
+
+#custom-timebox.ringing {
+    background-color: alpha(@color1, 0.2);
+    color: @color1;
+    animation: blink 1s linear infinite alternate;
+}
+
+#custom-privacy.active {
+    background-color: alpha(#ff3333, 0.18);
+    color: #ffffff;
+    border-radius: 4px;
+}
+
+#custom-privacy.idle {
+    padding: 0;
+    margin: 0;
+}
+
 #custom-recording {
     background-color: alpha(#ff4444, 0.15);
     color: #ff4444;
     animation: blink 1s linear infinite alternate;
-}
-
-#custom-timer {
-    background-color: alpha(@color2, 0.2);
-    color: @color2;
-    font-weight: bold;
 }
 
 /* Warnings and Critical States */

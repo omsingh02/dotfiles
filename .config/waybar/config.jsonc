@@ -6,14 +6,15 @@
     "spacing": 0,
     "modules-left": [
         "hyprland/workspaces",
-        // "hyprland/window"
         "custom/media",
-        "custom/shazam"
+        "custom/hark"
     ],
     "modules-center": [],
     "modules-right": [
+        "custom/privacy",
         "custom/recording",
-        // "custom/weather",
+        "custom/timebox",
+        "custom/awake",
         "custom/updates",
         "custom/themetoggle",
         "network",
@@ -25,6 +26,13 @@
         "clock"
     ],
     // --- MODULE DEFINITIONS ---
+    "custom/privacy": {
+        "format": "{}",
+        "return-type": "json",
+        "exec": "~/.local/bin/waybar-privacy",
+        "restart-interval": 2,
+        "tooltip": true
+    },
     "custom/dnd": {
         "return-type": "json",
         "exec": "~/.local/bin/syspanel dnd-status",
@@ -32,32 +40,40 @@
         "signal": 9,
         "on-click": "~/.local/bin/syspanel dnd-toggle"
     },
-    "custom/weather": {
-        "format": "{}",
-        "return-type": "json",
-        "exec": "~/.local/bin/weather",
-        "interval": 1800,
-        "on-click": "foot -e curl -s wttr.in"
-    },
     "custom/media": {
         "format": "{}",
         "return-type": "json",
-        "exec": "~/.local/bin/mediactl-status",
-        "exec-if": "test -s /tmp/waybar-media-json",
-        "interval": 5,
-        "exec-on-event": false,
-        "on-click": "~/.local/bin/mediactl toggle",
+        "exec": "~/.local/bin/media watch --waybar",
+        "restart-interval": 2,
+        "on-click": "~/.local/bin/media toggle",
         "on-click-right": "~/.local/bin/smart-scratchpad spncmpcpp spncmp 'foot --app-id spncmpcpp -e ncmpcpp'",
-        "on-scroll-up": "~/.local/bin/mediactl next",
-        "on-scroll-down": "~/.local/bin/mediactl prev",
-        "signal": 11
+        "on-scroll-up": "~/.local/bin/media next",
+        "on-scroll-down": "~/.local/bin/media prev"
     },
     "custom/themetoggle": {
         "format": "{}",
         "return-type": "json",
-        "exec": "~/.local/bin/wallpaper-scripts/wall-core state",
-        "on-click": "~/.local/bin/wallpaper-scripts/wall-core toggle-song",
-        "signal": 12,
+        "exec": "~/.local/bin/theme watch --waybar",
+        "restart-interval": 2,
+        "on-click": "~/.local/bin/theme mode toggle",
+        "on-click-right": "~/.local/bin/theme song toggle",
+        "tooltip": true
+    },
+    "custom/timebox": {
+        "format": "{}",
+        "return-type": "json",
+        "exec": "~/.local/bin/timebox-ctl bar",
+        "restart-interval": 2,
+        "on-click": "~/.local/bin/timebox-ctl menu",
+        "on-click-right": "~/.local/bin/timebox-ctl stop",
+        "tooltip": true
+    },
+    "custom/awake": {
+        "return-type": "json",
+        "exec": "~/.local/bin/stay-awake waybar",
+        "interval": 60,
+        "signal": 11,
+        "on-click": "~/.local/bin/stay-awake toggle",
         "tooltip": true
     },
     "custom/recording": {
@@ -68,18 +84,17 @@
         "on-click": "~/.local/bin/screenrecord stop",
         "tooltip-format": "<span size='12000' weight='bold'>Recording Active</span>\n<span color='#cccccc'>Click to stop</span>"
     },
-    "custom/shazam": {
+    "custom/hark": {
         "format": "{}",
         "return-type": "json",
-        "exec": "~/.local/bin/musicRecognition/shazam-waybar.sh",
+        "exec": "~/.local/bin/hark-waybar",
         "interval": 5,
         "signal": 10,
-        "on-click": "~/.local/bin/musicRecognition/shazam-waybar.sh toggle",
-        "on-click-right": "foot --title 'Shazam History' sh -c 'bat \"$HOME/.local/share/shazam_history.txt\"; read -p \"Press enter to close...\"'",
+        "on-click": "~/.local/bin/hark-waybar toggle",
+        "on-click-right": "foot --title 'hark history' sh -c 'less +G \"$HOME/.local/share/hark/history.txt\"'",
         "tooltip": true
     },
     "hyprland/workspaces": {
-        "on-click": "activate",
         "format": "{icon}",
         "format-icons": {
             "default": "",
@@ -108,7 +123,8 @@
         "return-type": "json",
         "exec": "~/.local/bin/waybar-updates",
         "interval": 3600,
-        "on-click": "foot -e sudo paru -Syu"
+        "signal": 12,
+        "on-click": "foot --hold -e ~/.local/bin/waybar-updates upgrade"
     },
     "network": {
         "interval": 5,
@@ -122,8 +138,8 @@
         "tooltip-format-wifi": "SSID: {essid} ({frequency}GHz)\nSignal: {signalStrength}%\n󰇚 {bandwidthDownBytes} | 󰕒 {bandwidthUpBytes}\nIP: {ipaddr}",
         "tooltip-format-ethernet": "Interface: {ifname}\n󰇚 {bandwidthDownBytes} | 󰕒 {bandwidthUpBytes}\nIP: {ipaddr}",
         "tooltip-format-disconnected": "Disconnected",
-        // Right-click to trigger your captive portal bypass script!
-        "on-click-right": "foot -e bash -c 'portal open; exec bash'",
+        // Right-click: open the login page of a captive portal
+        "on-click-right": "~/.local/bin/captive-portal",
         "on-click": "foot -e nmtui"
     },
     "memory": {

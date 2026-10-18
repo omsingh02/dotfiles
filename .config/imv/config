@@ -19,5 +19,5 @@ upscaling_method = linear
 q = quit
 
 [binds]
-# Set current image as wallpaper via wall-core
-<Ctrl+t> = exec wall-core set awww "$imv_current_file" &
+# Set current image as wallpaper
+<Ctrl+t> = exec theme set "$imv_current_file" &

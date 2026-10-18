@@ -34,14 +34,9 @@ cmd open ${{
     esac
 }}
 
-# Set Wallpaper via wall-core
+# Set the wallpaper (an image, a video or a shader; theme says if it is none of them)
 cmd set_wallpaper &{{
-    case $(file --mime-type -Lb "$f") in
-        image/*)
-            wall-core set awww "$f" ;;
-        *)
-            notify-send -a "Wallpaper" -u low "Wallpaper" "Not an image: $(basename "$f")" ;;
-    esac
+    theme set "$f"
 }}
 
 # FZF Search: Fuzzy find files in the current directory and jump to them

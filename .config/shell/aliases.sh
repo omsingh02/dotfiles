@@ -15,9 +15,9 @@ alias l="ls -lah --color=always --group-directories-first"
 
 # Abbreviations for common tasks
 alias g="git"
-alias v="$EDITOR"
-alias e="$EDITOR"
-alias vim="$EDITOR"
+alias v='$EDITOR'
+alias e='$EDITOR'
+alias vim='$EDITOR'
 alias mkd="mkdir -pv"
 alias yt="yt-dlp --embed-metadata -i"
 alias pubip="dig +short myip.opendns.com @resolver1.opendns.com"
@@ -33,8 +33,9 @@ alias gcad='git commit -a --amend'
 alias ff="fzf --preview 'bat --style=numbers --color=always {}'"
 alias eff='$EDITOR $(ff)'
 
-# Auto-sudo system commands
-for command in mount umount sv pacman updatedb su shutdown poweroff reboot; do
+# Auto-sudo system commands (the loop builds each alias, so the name is meant to expand here)
+for command in mount umount pacman su shutdown poweroff reboot; do
+    # shellcheck disable=SC2139
     alias $command="sudo $command"
 done; unset command
 
@@ -42,6 +43,10 @@ done; unset command
 alias lf="lfcd"
 alias media-env="source ~/.local/share/venvs/media/bin/activate"
 
-# Dotfiles management (bare git repository)
-alias dotfiles='/usr/bin/git --git-dir=$HOME/.dotfiles/ --work-tree=$HOME'
-alias cfg='dotfiles'
+# The configuration repository (~/dox/repos/infra)
+alias infra='git -C "$HOME/dox/repos/infra"'
+alias cfg='infra'
+
+
+# GCC Compilation flags
+alias gpp="g++ -Wall -Weffc++ -Wextra -Wconversion -Wsign-conversion -Werror -std=c++20"

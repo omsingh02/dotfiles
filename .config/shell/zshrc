@@ -1,11 +1,8 @@
 # Zsh-specific options and sourcing
 SHELL_DIR="$HOME/.config/shell"
 
-# 1. Environment
-source "$SHELL_DIR/env.sh"
-
-# Login shell? Source profile (Hyprland auto-start, etc.)
-[[ -o login ]] && source "$SHELL_DIR/profile"
+# The environment is not set here: environment.d defines it and the login hook (profile, from ~/.zprofile or
+# ~/.bash_profile) loads it; every other shell inherits it.
 
 # Non-interactive? Stop here.
 [[ ! -o interactive ]] && return
@@ -16,6 +13,7 @@ source "$SHELL_DIR/functions.sh"
 
 # 3. Zsh options
 export HISTFILE="${XDG_STATE_HOME:-$HOME/.local/state}/zsh/history"
+[[ -d ${HISTFILE:h} ]] || (umask 077; mkdir -p "${HISTFILE:h}")      # without the folder zsh saves nothing, silently
 export HISTSIZE=1000000
 export SAVEHIST=1000000
 
@@ -48,7 +46,15 @@ preexec() { echo -ne '\e[5 q'; }
 _zsh_cache="${XDG_CACHE_HOME:-$HOME/.cache}/zsh"
 [[ -d "$_zsh_cache" ]] || mkdir -p "$_zsh_cache"
 zmodload zsh/complist
-autoload -Uz compinit && compinit -d "$_zsh_cache/zcompdump"
+autoload -Uz compinit
+# Full check (incl. compaudit) only when the dump is missing or older than 24 h; else trust it (-C)
+_zstale=("$_zsh_cache/zcompdump"(N.mh+24))
+if (( $#_zstale )) || [[ ! -s "$_zsh_cache/zcompdump" ]]; then
+    compinit -d "$_zsh_cache/zcompdump" && touch "$_zsh_cache/zcompdump"
+else
+    compinit -C -d "$_zsh_cache/zcompdump"
+fi
+unset _zstale
 zstyle ':completion:*' menu select
 _comp_options+=(globdots)            # Include dotfiles in completion
 unset _zsh_cache
@@ -76,42 +82,24 @@ else
     PS1="%B%{$fg[red]%}[%{$fg[yellow]%}%n%{$fg[green]%}@%{$fg[blue]%}%M %{$fg[magenta]%}%~%{$fg[red]%}]%{$reset_color%}$%b "
 fi
 
-# 6. Plugins (repos cloned to $XDG_DATA_HOME/zsh/plugins)
-ZSH_PLUGIN_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/zsh/plugins"
-
+# 6. Plugins: the packaged ones (pacman: zsh-autosuggestions, zsh-syntax-highlighting), else older clones in
+# $XDG_DATA_HOME/zsh/plugins. Nothing is downloaded when a shell starts; an absent plugin is just absent.
 zsh_load_plugin() {
-    local repo="$1"
-    local plugin_name="${repo##*/}"
-    local plugin_dir="$ZSH_PLUGIN_DIR/$plugin_name"
-
-    if [[ ! -d "$plugin_dir" ]]; then
-        echo "[shell] Installing plugin: $plugin_name..."
-        git clone --depth=1 "https://github.com/$repo.git" "$plugin_dir" 2>/dev/null
-    fi
-
-    local init_file
-    for init_file in \
-        "$plugin_dir/$plugin_name.plugin.zsh" \
-        "$plugin_dir/$plugin_name.zsh" \
-        "$plugin_dir/init.zsh"; do
-        if [[ -f "$init_file" ]]; then
-            source "$init_file"
-            return
-        fi
+    local name="$1" dir file
+    for dir in "${ZSH_SYSTEM_PLUGINS:-/usr/share/zsh/plugins}/$name" "${XDG_DATA_HOME:-$HOME/.local/share}/zsh/plugins/$name"; do
+        for file in "$dir/$name.plugin.zsh" "$dir/$name.zsh"; do
+            if [[ -f $file ]]; then
+                source "$file"
+                return
+            fi
+        done
     done
 }
 
-zsh_update_plugins() {
-    for dir in "$ZSH_PLUGIN_DIR"/*/; do
-        echo "[shell] Updating $(basename "$dir")..."
-        git -C "$dir" pull --ff-only 2>/dev/null
-    done
-}
+zsh_load_plugin zsh-autosuggestions
 
-zsh_load_plugin "zsh-users/zsh-autosuggestions"
-
-# 7. Cross-shell interactive tools (FZF, Zoxide, Pywal)
+# 7. Cross-shell interactive tools (FZF, Zoxide)
 source "$SHELL_DIR/interactive.sh"
 
 # Must be sourced last
-zsh_load_plugin "zsh-users/zsh-syntax-highlighting"
+zsh_load_plugin zsh-syntax-highlighting

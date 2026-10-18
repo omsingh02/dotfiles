@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Unmount Storage Drive [Super+F10]
-Comment=Eject and unmount storage drive
-Exec=drivemount unmount
-Icon=media-eject
-Terminal=false
-Categories=System;
-Keywords=unmount;eject;drive;usb;f10;

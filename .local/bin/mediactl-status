@@ -1,7 +1,0 @@
-#!/usr/bin/env bash
-# Author: Om Singh
-# Waybar media module — reads pre-computed JSON from wall-daemon state file
-# The wall-daemon event loop computes and writes this file on every metadata
-# change and interpolates position every 2s during playback.
-cat "${XDG_RUNTIME_DIR:-/tmp/user-$(id -u)}/waybar-media-json" 2>/dev/null || cat /tmp/waybar-media-json 2>/dev/null || \
-    echo '{"text": "", "class": "stopped", "tooltip": "No media playing"}'

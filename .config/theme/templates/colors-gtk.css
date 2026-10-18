@@ -1,170 +1,167 @@
-/* === libadwaita / GTK4 named colors === */
-@define-color accent_color {{color4}};
-@define-color accent_fg_color {{background}};
-@define-color accent_bg_color {{color4}};
+/* === Material 3 Dynamic GTK Themes === */
+@define-color accent_color {{primary}};
+@define-color accent_fg_color {{onPrimary}};
+@define-color accent_bg_color {{primary}};
 @define-color window_bg_color {{background}};
 @define-color window_fg_color {{foreground}};
-@define-color headerbar_bg_color {{background}};
+@define-color headerbar_bg_color {{surfaceContainer}};
 @define-color headerbar_fg_color {{foreground}};
-@define-color popover_bg_color {{background}};
+@define-color popover_bg_color {{surfaceContainerHigh}};
 @define-color popover_fg_color {{foreground}};
 @define-color view_bg_color {{background}};
 @define-color view_fg_color {{foreground}};
-@define-color card_bg_color {{color0}};
+@define-color card_bg_color {{surfaceContainer}};
 @define-color card_fg_color {{foreground}};
 @define-color sidebar_bg_color @window_bg_color;
 @define-color sidebar_fg_color @window_fg_color;
 @define-color sidebar_border_color @window_bg_color;
 @define-color sidebar_backdrop_color @window_bg_color;
 
-/* === GTK3 Adwaita named colors (needed for Thunar, virt-manager, blueman, etc.) === */
+/* === GTK3 Adwaita named colors === */
 @define-color theme_bg_color {{background}};
 @define-color theme_fg_color {{foreground}};
-@define-color theme_base_color {{color0}};
+@define-color theme_base_color {{surfaceContainerLow}};
 @define-color theme_text_color {{foreground}};
-@define-color theme_selected_bg_color {{color4}};
-@define-color theme_selected_fg_color {{background}};
-@define-color insensitive_bg_color {{color0}};
-@define-color insensitive_fg_color {{color8}};
+@define-color theme_selected_bg_color {{primary}};
+@define-color theme_selected_fg_color {{onPrimary}};
+@define-color insensitive_bg_color {{surfaceContainer}};
+@define-color insensitive_fg_color {{outline}};
 @define-color borders alpha({{foreground}}, 0.15);
 @define-color unfocused_borders alpha({{foreground}}, 0.1);
 
-/* === Widget-level overrides for GTK3 dark mode === */
-
-/* Window & main container backgrounds */
 window, .background, dialog {
     background-color: @theme_bg_color;
     color: @theme_fg_color;
 }
 
-/* Content areas: treeviews, lists, text views, scrolled content */
 treeview.view, textview, textview text,
 iconview, .view, list, listbox, flowbox {
     background-color: @theme_base_color;
     color: @theme_text_color;
 }
 
-/* Treeview headers */
 treeview.view header button {
     background-color: @theme_bg_color;
     color: @theme_fg_color;
     border-color: @borders;
 }
 
-/* Entry / search fields */
 entry, .entry, searchbar > revealer > box, searchbar entry, spinbutton {
     background-color: @theme_base_color;
     color: @theme_text_color;
     border-color: @borders;
 }
 
-/* Headerbars, toolbars, menubars */
-headerbar, .titlebar, toolbar, menubar {
-    background-color: @theme_bg_color;
-    color: @theme_fg_color;
+/* Menus & Popovers (Right click context menus in Brave, Chrome, GTK apps) */
+menu, .menu, popover.menu, .context-menu {
+    background-color: @popover_bg_color;
+    color: @popover_fg_color;
+    border: 1px solid @borders;
+    padding: 5px;
+    border-radius: 8px;
 }
 
-/* Menus and popovers */
-menu, .menu, .context-menu, popover, popover.background {
-    background-color: @theme_bg_color;
+menu menuitem, .menu menuitem, popover.menu modelbutton {
+    background-color: transparent;
     color: @theme_fg_color;
+    padding: 6px 10px;
+    border-radius: 5px;
+    min-height: 22px;
 }
 
-menu menuitem, .menu menuitem {
-    color: @theme_fg_color;
-}
-
-menu menuitem:hover, .menu menuitem:hover {
+menu menuitem:hover, menu menuitem:selected,
+popover.menu modelbutton:hover, popover.menu modelbutton:selected {
     background-color: @theme_selected_bg_color;
     color: @theme_selected_fg_color;
 }
 
-/* Sidebar */
-.sidebar, .sidebar .view, .sidebar row, placessidebar {
+menu menuitem:disabled, popover.menu modelbutton:disabled {
+    color: @insensitive_fg_color;
+    background-color: transparent;
+}
+
+menu separator, popover.menu separator {
+    background-color: @borders;
+    min-height: 1px;
+    margin: 4px 0;
+}
+
+/* Active Selection Highlighting (Lists, Treeviews, File Managers) */
+:selected,
+row:selected,
+row:selected:focus,
+treeview.view:selected,
+treeview.view:selected:focus,
+list row:selected,
+list row:selected:focus,
+listbox row:selected,
+listbox row:selected:focus,
+flowboxchild:selected,
+flowboxchild:selected:focus {
+    background-color: @theme_selected_bg_color;
+    color: @theme_selected_fg_color;
+}
+
+/* Sidebars & Navigation (Thunar, Nautilus, PCManFM) */
+.sidebar, placessidebar, stacksidebar {
+    background-color: @sidebar_bg_color;
+    color: @sidebar_fg_color;
+}
+
+.sidebar row, placessidebar row, stacksidebar row {
+    color: @sidebar_fg_color;
+    padding: 6px 10px;
+    border-radius: 6px;
+    margin: 2px 4px;
+}
+
+.sidebar row:hover, placessidebar row:hover, stacksidebar row:hover {
+    background-color: alpha(@theme_fg_color, 0.08);
+}
+
+.sidebar row:selected, placessidebar row:selected, stacksidebar row:selected {
+    background-color: @theme_selected_bg_color;
+    color: @theme_selected_fg_color;
+    font-weight: bold;
+}
+
+/* Notebook Tabs (Active Tab Highlighting) */
+notebook > header > tabs > tab {
+    background-color: @theme_base_color;
+    color: @insensitive_fg_color;
+    padding: 6px 12px;
+    border-bottom: 2px solid transparent;
+}
+
+notebook > header > tabs > tab:checked,
+notebook > header > tabs > tab:selected {
     background-color: @theme_bg_color;
-    color: @theme_fg_color;
-}
-
-.sidebar row label, .sidebar label, .sidebar .view label {
-    color: @theme_fg_color;
-}
-
-.sidebar row:selected, .sidebar row:selected label {
-    background-color: @theme_selected_bg_color;
-    color: @theme_selected_fg_color;
-}
-
-/* Selection in views */
-treeview.view:selected, .view:selected, list row:selected,
-listbox row:selected, iconview:selected {
-    background-color: @theme_selected_bg_color;
-    color: @theme_selected_fg_color;
+    color: @theme_selected_bg_color;
+    border-bottom: 2px solid @theme_selected_bg_color;
+    font-weight: bold;
 }
 
 /* Buttons */
 button {
-    background-image: none;
-    background-color: alpha(@theme_fg_color, 0.08);
+    background-color: @card_bg_color;
     color: @theme_fg_color;
-    border-color: @borders;
+    border: 1px solid @borders;
+    border-radius: 6px;
+    padding: 5px 10px;
 }
 
 button:hover {
-    background-color: alpha(@theme_fg_color, 0.15);
+    background-color: alpha(@theme_selected_bg_color, 0.15);
+    border-color: @theme_selected_bg_color;
 }
 
 button:active, button:checked {
-    background-color: alpha(@theme_selected_bg_color, 0.3);
-    color: @theme_fg_color;
-}
-
-/* Scrollbar */
-scrollbar slider {
-    background-color: alpha(@theme_fg_color, 0.3);
-}
-
-/* Statusbar, infobar */
-statusbar, actionbar {
-    background-color: @theme_bg_color;
-    color: @theme_fg_color;
-}
-
-/* Notebook tabs (virt-manager uses these) */
-notebook, notebook > header, notebook > stack {
-    background-color: @theme_bg_color;
-}
-
-notebook > header > tabs > tab {
-    color: @theme_fg_color;
-}
-
-notebook > header > tabs > tab:checked {
-    color: @theme_selected_bg_color;
-}
-
-/* Frame and separator borders */
-frame > border, separator {
-    border-color: @borders;
-}
-
-/* Switch (blueman toggle) */
-switch {
-    background-color: alpha(@theme_fg_color, 0.15);
-}
-
-switch:checked {
     background-color: @theme_selected_bg_color;
+    color: @theme_selected_fg_color;
 }
 
-/* Tooltips */
-tooltip, tooltip.background {
-    background-color: @theme_bg_color;
-    color: @theme_fg_color;
+button:disabled {
+    color: @insensitive_fg_color;
+    background-color: @insensitive_bg_color;
+    border-color: transparent;
 }
-
-/* Labels fallback */
-label {
-    color: @theme_fg_color;
-}
-
-@import "thunar.css";

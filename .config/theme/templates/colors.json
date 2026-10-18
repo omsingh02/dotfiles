@@ -1,9 +1,11 @@
 {
   "alpha": "100",
+  "mode": "{{scheme}}",
   "special": {
     "background": "{{background}}",
     "foreground": "{{foreground}}",
-    "cursor": "{{cursor}}"
+    "cursor": "{{cursor}}",
+    "primary": "{{primary}}"
   },
   "colors": {
     "color0": "{{color0}}",

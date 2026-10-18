@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Night Light Toggle [Super+F6]
-Comment=Toggle warm display blue-light filter
-Exec=nightmode
-Icon=redshift
-Terminal=false
-Categories=Settings;
-Keywords=night;light;gamma;blue;f6;

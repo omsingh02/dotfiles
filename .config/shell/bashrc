@@ -1,11 +1,8 @@
 # Bash-specific options and sourcing
 SHELL_DIR="$HOME/.config/shell"
 
-# 1. Environment
-source "$SHELL_DIR/env.sh"
-
-# Login shell? Source profile (Hyprland auto-start, etc.)
-shopt -q login_shell && source "$SHELL_DIR/profile"
+# The environment is not set here: environment.d defines it and the login hook (profile, from ~/.zprofile or
+# ~/.bash_profile) loads it; every other shell inherits it.
 
 # Non-interactive? Stop here.
 [[ $- != *i* ]] && return
@@ -16,6 +13,7 @@ source "$SHELL_DIR/functions.sh"
 
 # 3. Bash options
 export HISTFILE="${XDG_STATE_HOME:-$HOME/.local/state}/bash/history"
+[[ -d ${HISTFILE%/*} ]] || (umask 077; mkdir -p "${HISTFILE%/*}")      # without the folder bash saves nothing, silently
 export HISTSIZE=1000000
 export HISTFILESIZE=1000000
 export HISTCONTROL=ignoreboth:erasedups
@@ -69,16 +67,12 @@ if ! shopt -oq posix; then
     fi
 fi
 
-# 5. Prompt
-#c_red='\[\e[1;31m\]'
-#c_yellow='\[\e[1;33m\]'
-#c_green='\[\e[1;32m\]'
-#c_blue='\[\e[1;34m\]'
-#c_magenta='\[\e[1;35m\]'
-#c_reset='\[\e[0m\]'
-#PS1="${c_red}[${c_yellow}\u${c_green}@${c_blue}\h ${c_magenta}\w${c_red}]${c_reset}\$ "
-#unset c_red c_yellow c_green c_blue c_magenta c_reset
-
-# 6. Cross-shell interactive tools (FZF, Zoxide, Pywal)
+# 5. Cross-shell interactive tools (FZF, Zoxide)
 source "$SHELL_DIR/interactive.sh"
-eval "$(starship init bash)"
+
+# 6. Prompt (zshrc does the same: starship, or a plain prompt where it is not installed)
+if command -v starship >/dev/null 2>&1; then
+    eval "$(starship init bash)"
+else
+    PS1='\[\e[1;31m\][\[\e[1;33m\]\u\[\e[1;32m\]@\[\e[1;34m\]\h \[\e[1;35m\]\w\[\e[1;31m\]]\[\e[0m\]\$ '
+fi

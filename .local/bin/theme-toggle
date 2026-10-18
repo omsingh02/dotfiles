@@ -1,3 +1,0 @@
-#!/usr/bin/env bash
-# Forwarder to unified wallpaper engine
-exec "$HOME/.local/bin/wallpaper" toggle-song "$@"

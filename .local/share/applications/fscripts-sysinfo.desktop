@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=System Info & Diagnostics [Super+F8]
-Comment=Hardware diagnostics OSD (CPU, RAM, Battery)
-Exec=sysinfo
-Icon=utilities-system-monitor
-Terminal=false
-Categories=System;
-Keywords=system;info;hardware;stats;cpu;ram;f8;

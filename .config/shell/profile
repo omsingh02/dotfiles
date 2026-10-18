@@ -1,74 +1,13 @@
-# Login shell hook (sourced by ~/.bash_profile or zprofile)
+# Login shell hook: ~/.zprofile is a link to this file and ~/.bash_profile sources it.
+# The environment is defined once, in ~/.config/environment.d/*.conf and /etc/environment. The user manager reads those
+# itself; a login shell loads the same definitions here (the generator prints shell-quoted KEY=VALUE lines), so Hyprland
+# and everything it starts see exactly what the units see.
+set -a
+# shellcheck source=/dev/null
+. <(/usr/lib/systemd/user-environment-generators/30-systemd-environment-d-generator)
+set +a
+
 # Auto-start Hyprland on TTY1
 if [[ -z "$DISPLAY" && -z "$WAYLAND_DISPLAY" && "$(tty)" == "/dev/tty1" ]]; then
-    # Ensure baseline theme colors exist before Hyprland & Waybar parse configs on cold boot
-    mkdir -p "$HOME/.cache/theme"
-    if [ ! -f "$HOME/.cache/theme/colors-hyprland.conf" ]; then
-        cat << 'EOF' > "$HOME/.cache/theme/colors-hyprland.conf"
-$background = rgb(0A0F0F)
-$foreground = rgb(DCE8E6)
-$cursor = rgb(9BD0CC)
-$color0 = rgb(343434)
-$color1 = rgb(769E00)
-$color2 = rgb(58E2BE)
-$color3 = rgb(82FCCC)
-$color4 = rgb(76B6B2)
-$color5 = rgb(7AAEE9)
-$color6 = rgb(83D9C8)
-$color7 = rgb(CDDCD3)
-$color8 = rgb(9AA59E)
-$color9 = rgb(85B900)
-$color10 = rgb(45F7CE)
-$color11 = rgb(CEFFE8)
-$color12 = rgb(A4C8C2)
-$color13 = rgb(A2C0F7)
-$color14 = rgb(8CEDD8)
-$color15 = rgb(FFFFFF)
-$primary = rgb(9BD0CC)
-$on_primary = rgb(0D4845)
-$primary_container = rgb(255B57)
-$secondary = rgb(B0CCC9)
-$tertiary = rgb(D5EFFF)
-$surface = rgb(0A0F0F)
-$on_surface = rgb(DCE8E6)
-$surface_container = rgb(131B1A)
-$outline = rgb(6D7876)
-$error = rgb(FA746F)
-EOF
-    fi
-
-    if [ ! -f "$HOME/.cache/theme/colors-waybar.css" ]; then
-        cat << 'EOF' > "$HOME/.cache/theme/colors-waybar.css"
-@define-color background #0A0F0F;
-@define-color foreground #DCE8E6;
-@define-color cursor #9BD0CC;
-@define-color color0 #343434;
-@define-color color1 #769E00;
-@define-color color2 #58E2BE;
-@define-color color3 #82FCCC;
-@define-color color4 #76B6B2;
-@define-color color5 #7AAEE9;
-@define-color color6 #83D9C8;
-@define-color color7 #CDDCD3;
-@define-color color8 #9AA59E;
-@define-color color9 #85B900;
-@define-color color10 #45F7CE;
-@define-color color11 #CEFFE8;
-@define-color color12 #A4C8C2;
-@define-color color13 #A2C0F7;
-@define-color color14 #8CEDD8;
-@define-color color15 #FFFFFF;
-@define-color primary #9BD0CC;
-@define-color on_primary #0D4845;
-@define-color primary_container #255B57;
-@define-color secondary #B0CCC9;
-@define-color tertiary #D5EFFF;
-@define-color surface #0A0F0F;
-@define-color on_surface #DCE8E6;
-@define-color surface_container #131B1A;
-@define-color outline #6D7876;
-@define-color error #FA746F;
-EOF
-    fi
     exec start-hyprland
 fi
